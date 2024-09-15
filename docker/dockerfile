@@ -1,0 +1,50 @@
+# Builder stage for compiling the Go application
+FROM golang:alpine as builder
+
+# Set the working directory
+WORKDIR /app
+
+# Install build dependencies
+RUN apk update && apk add --no-cache git
+
+# Copy the Go application files to the builder stage
+COPY . .
+
+# Build the Go application (adjust paths if needed)
+RUN go mod tidy
+RUN go build -o mcelroy-radio ./main.go
+
+# Final stage for setting up the runtime environment
+FROM alpine:3.19
+
+# Metadata
+LABEL maintainer="Collin Pendleton <collinp@collinpendleton.com>"
+
+# Install runtime dependencies
+RUN apk add --no-cache nginx bash curl
+
+# Set up directories for the app and static files
+RUN mkdir -p /mcelroy-radio
+
+# Copy the built Go application from the builder stage to the runtime stage
+COPY --from=builder /app/mcelroy-radio /mcelroy-radio/mcelroy-radio
+
+# Copy static files to be served by the Go app
+COPY ./static /mcelroy-radio/static
+COPY ./index.html /mcelroy-radio/index.html
+
+# Set the working directory
+WORKDIR /mcelroy-radio
+
+# Copy startup scripts if needed
+COPY docker/startup.sh /startup.sh
+RUN chmod +x /startup.sh
+
+# Copy Nginx configuration (if applicable, adjust based on your setup)
+# COPY docker/nginx.conf /etc/nginx/nginx.conf
+
+# Expose necessary ports
+EXPOSE 8080
+
+# Entry point to run the Go application (or any other startup script)
+ENTRYPOINT ["/mcelroy-radio/mcelroy-radio"]

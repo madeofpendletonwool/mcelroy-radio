@@ -1,0 +1,8 @@
+services:
+  mcelroy-radio:
+    image: mcelroy-radio:latest
+    ports:
+      - "8080:8080"
+    # volumes:
+      # Mount the location of the audio files
+      # - /home/user/pinepods/downloads:/opt/pinepods/downloads
