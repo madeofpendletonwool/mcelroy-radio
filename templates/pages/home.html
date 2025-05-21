@@ -27,7 +27,29 @@
             </div>
             {{ else }}
             <div class="episode-card">
-                <p>No episodes currently playing. Check back soon!</p>
+                <div class="episode-image">
+                    <img
+                        src="/static/img/default-cover.png"
+                        alt="Default Cover Art"
+                    />
+                </div>
+                <div class="episode-details">
+                    <h2>Now Playing</h2>
+                    <h3>Waiting for Content</h3>
+                    <p class="show-name">McElroy Radio</p>
+                    <div class="fact-box">
+                        <h4>
+                            <i class="fas fa-lightbulb"></i> McElroy Fun Fact:
+                        </h4>
+                        <p id="random-fact">
+                            The McElroy brothers are not experts, and their
+                            advice should never be followed.
+                        </p>
+                        <button id="new-fact-btn" class="btn btn-small">
+                            <i class="fas fa-sync-alt"></i> New Fact
+                        </button>
+                    </div>
+                </div>
             </div>
             {{ end }}
         </div>
@@ -76,6 +98,7 @@
                 <div
                     class="volume-slider-container"
                     id="volume-slider-container"
+                    style="display: none"
                 >
                     <input
                         type="range"

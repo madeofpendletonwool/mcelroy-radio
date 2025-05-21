@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -42,7 +43,7 @@ func main() {
 	log.Println("Shutting down the radio...")
 
 	// Give outstanding requests a timeout of 5 seconds to complete
-	shutdownCtx, cancel := cfg.Context.WithTimeout(time.Second * 5)
+	shutdownCtx, cancel := context.WithTimeout(cfg.Context, time.Second*5)
 	defer cancel()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {

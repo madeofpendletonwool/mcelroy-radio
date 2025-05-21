@@ -12,9 +12,9 @@ services:
       - "8080:8080"
     volumes:
       # Mount the location of the audio files - uncomment and adjust paths as needed
-      - /home/user/podcasts/mbmbam:/opt/mcelroy-content/show1
-      - /home/user/podcasts/adventure-zone:/opt/mcelroy-content/show2
-      - /home/user/podcasts/sawbones:/opt/mcelroy-content/show3
+      - /Users/collin_pendleton/Documents/github/mcelroy-radio/mbmbam:/opt/mcelroy-content/show1
+      - /Users/collin_pendleton/Documents/github/mcelroy-radio/adventure-zone:/opt/mcelroy-content/show2
+      - /Users/collin_pendleton/Documents/github/mcelroy-radio/sawbones:/opt/mcelroy-content/show3
     environment:
       - PORT=8080
       # Optionally customize content directories

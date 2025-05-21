@@ -1,11 +1,15 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"html/template"
+	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/madeofpendletonwool/mcelroy-radio/internal/config"
@@ -19,15 +23,55 @@ type Handler struct {
 	config    *config.Config
 	fileStore *storage.FileStore
 	player    *player.RadioPlayer
-	templates *template.Template
+	templates map[string]*template.Template
 	mu        sync.RWMutex
 }
 
-// New creates a new handler
 func New(cfg *config.Config, fs *storage.FileStore) *Handler {
-	// Initialize templates
-	tmpl := template.Must(template.ParseGlob(filepath.Join(cfg.TemplatesDir, "*.html")))
-	template.Must(tmpl.ParseGlob(filepath.Join(cfg.TemplatesDir, "pages", "*.html")))
+	// Create a template with functions
+	funcMap := template.FuncMap{
+		"currentYear": func() int {
+			return time.Now().Year()
+		},
+		"formatTime": func(t time.Time) string {
+			return t.Format("Jan 02, 2006 15:04")
+		},
+	}
+
+	// Read all template files
+	layoutPath := filepath.Join(cfg.TemplatesDir, "layout.html")
+	homePath := filepath.Join(cfg.TemplatesDir, "pages", "home.html")
+	aboutPath := filepath.Join(cfg.TemplatesDir, "pages", "about.html")
+
+	log.Printf("Loading templates from paths:")
+	log.Printf("Layout: %s", layoutPath)
+	log.Printf("Home: %s", homePath)
+	log.Printf("About: %s", aboutPath)
+
+	// Create separate templates for each page
+	homeTemplate, err := template.New("home").Funcs(funcMap).ParseFiles(layoutPath, homePath)
+	if err != nil {
+		log.Fatalf("Error parsing home template: %v", err)
+	}
+
+	aboutTemplate, err := template.New("about").Funcs(funcMap).ParseFiles(layoutPath, aboutPath)
+	if err != nil {
+		log.Fatalf("Error parsing about template: %v", err)
+	}
+
+	// Read the home template file content to debug
+	homeContent, err := os.ReadFile(homePath)
+	if err != nil {
+		log.Printf("Error reading home template: %v", err)
+	} else {
+		log.Printf("Home template content: %s", string(homeContent[:100])) // Print first 100 chars
+	}
+
+	// Store templates in a map for easier access
+	templates := map[string]*template.Template{
+		"home":  homeTemplate,
+		"about": aboutTemplate,
+	}
 
 	// Create player
 	p, _ := player.New(fs)
@@ -36,12 +80,13 @@ func New(cfg *config.Config, fs *storage.FileStore) *Handler {
 		config:    cfg,
 		fileStore: fs,
 		player:    p,
-		templates: tmpl,
+		templates: templates,
 	}
 }
 
-// HomePage renders the home page
 func (h *Handler) HomePage(w http.ResponseWriter, r *http.Request) {
+	log.Println("Rendering home page template")
+
 	h.mu.RLock()
 	currentEpisode := h.fileStore.GetCurrentEpisode()
 	recentEpisodes := h.fileStore.GetRecentlyPlayed()
@@ -51,18 +96,46 @@ func (h *Handler) HomePage(w http.ResponseWriter, r *http.Request) {
 		"Title":          "McElroy Radio - Where the goofs never end!",
 		"CurrentEpisode": currentEpisode,
 		"RecentEpisodes": recentEpisodes,
+		"CurrentYear":    time.Now().Year(),
 	}
 
-	h.templates.ExecuteTemplate(w, "home.html", data)
+	// Debug output for template data
+	log.Printf("Template data: %+v", data)
+
+	var buf bytes.Buffer
+	err := h.templates["home"].ExecuteTemplate(&buf, "layout.html", data)
+	if err != nil {
+		log.Printf("Template execution error: %v", err)
+		http.Error(w, "Error rendering page", http.StatusInternalServerError)
+		return
+	}
+
+	output := buf.String()
+	log.Printf("Home template output length: %d bytes", len(output))
+
+	w.Write([]byte(output))
 }
 
-// AboutPage renders the about page
 func (h *Handler) AboutPage(w http.ResponseWriter, r *http.Request) {
+	log.Println("Rendering about page template")
+
 	data := map[string]interface{}{
-		"Title": "About McElroy Radio",
+		"Title":       "About McElroy Radio",
+		"CurrentYear": time.Now().Year(),
 	}
 
-	h.templates.ExecuteTemplate(w, "about.html", data)
+	var buf bytes.Buffer
+	err := h.templates["about"].ExecuteTemplate(&buf, "layout.html", data)
+	if err != nil {
+		log.Printf("Template execution error: %v", err)
+		http.Error(w, "Error rendering page", http.StatusInternalServerError)
+		return
+	}
+
+	output := buf.String()
+	log.Printf("About template output length: %d bytes", len(output))
+
+	w.Write([]byte(output))
 }
 
 // StreamAudio handles streaming audio to the client

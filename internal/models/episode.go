@@ -35,7 +35,7 @@ func NewEpisodeFromFile(path string, showName string) *Episode {
 		ImagePath:   "/static/img/default-cover.png", // Default image
 		Duration:    0,                               // Will be set later when audio is processed
 		PublishedAt: time.Now(),                      // Default to now, can be updated later
-		RandomFact:  getRandomFact(),
+		RandomFact:  GetRandomFact(),
 	}
 }
 

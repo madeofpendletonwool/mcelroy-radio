@@ -1,6 +1,7 @@
 package server
 
 import (
+	"log"
 	"net/http"
 	"time"
 
@@ -41,8 +42,9 @@ func New(cfg *config.Config) (*http.Server, error) {
 	r.Get("/random-fact", h.RandomFact)
 
 	// Static file server
+	log.Printf("Serving static files from: %s", cfg.StaticDir)
 	fileServer := http.FileServer(http.Dir(cfg.StaticDir))
-	r.Handle("/static/*", http.StripPrefix("/static", fileServer))
+	r.Handle("/static/*", http.StripPrefix("/static/", fileServer))
 
 	// Create and return the server
 	return &http.Server{

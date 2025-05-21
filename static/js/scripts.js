@@ -1,23 +1,40 @@
 document.addEventListener("DOMContentLoaded", function () {
   // Player elements
   const audioPlayer = document.getElementById("audio-stream");
+
+  // Check if elements exist before accessing them
+  // This prevents errors when elements are not found
   const playBtn = document.getElementById("play-btn");
-  const playIcon = playBtn.querySelector("i");
   const rewindBtn = document.getElementById("rewind-btn");
   const volumeBtn = document.getElementById("volume-btn");
-  const volumeIcon = volumeBtn.querySelector("i");
   const volumeSlider = document.getElementById("volume-slider");
   const volumeContainer = document.getElementById("volume-slider-container");
   const progressBar = document.getElementById("progress");
   const currentTimeEl = document.getElementById("current-time");
   const durationEl = document.getElementById("duration");
-
-  // Random fact elements
   const randomFactEl = document.getElementById("random-fact");
   const newFactBtn = document.getElementById("new-fact-btn");
-
-  // Radio quote element
   const radioQuote = document.getElementById("radio-quote");
+
+  // If audio player doesn't exist, exit early
+  if (!audioPlayer) {
+    console.warn(
+      "Audio player element not found. Exiting player initialization.",
+    );
+    return;
+  }
+
+  let playIcon = null;
+  let volumeIcon = null;
+
+  // Safely get child elements
+  if (playBtn) {
+    playIcon = playBtn.querySelector("i");
+  }
+
+  if (volumeBtn) {
+    volumeIcon = volumeBtn.querySelector("i");
+  }
 
   // Quotes collection
   const quotes = [
@@ -95,15 +112,21 @@ document.addEventListener("DOMContentLoaded", function () {
   // Store the last volume level before muting
   let lastVolumeLevel = volumeLevel;
 
-  // Set initial volume
-  audioPlayer.volume = volumeLevel;
-  volumeSlider.value = volumeLevel * 100;
+  // Set initial volume if audioPlayer exists
+  if (audioPlayer) {
+    audioPlayer.volume = volumeLevel;
+  }
+
+  if (volumeSlider) {
+    volumeSlider.value = volumeLevel * 100;
+  }
 
   // Update now playing info and progress
   function updateNowPlaying() {
     fetch("/now-playing")
       .then((response) => response.json())
       .then((data) => {
+        console.log("Now playing:", data);
         // Update UI with current episode info if needed
         // Could update title, show name, image, etc.
       })
@@ -119,36 +142,53 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Update progress bar and time display
   function updateProgress() {
-    if (audioPlayer.duration) {
+    if (audioPlayer && audioPlayer.duration) {
       const percent = (audioPlayer.currentTime / audioPlayer.duration) * 100;
-      progressBar.style.width = `${percent}%`;
-      currentTimeEl.textContent = formatTime(audioPlayer.currentTime);
-      durationEl.textContent = formatTime(audioPlayer.duration);
+      if (progressBar) {
+        progressBar.style.width = `${percent}%`;
+      }
+      if (currentTimeEl) {
+        currentTimeEl.textContent = formatTime(audioPlayer.currentTime);
+      }
+      if (durationEl) {
+        durationEl.textContent = formatTime(audioPlayer.duration);
+      }
     }
   }
 
   // Play/Pause toggle
   function togglePlay() {
+    if (!audioPlayer) return;
+
     if (isPlaying) {
       audioPlayer.pause();
-      playIcon.classList.remove("fa-pause");
-      playIcon.classList.add("fa-play");
+      if (playIcon) {
+        playIcon.classList.remove("fa-pause");
+        playIcon.classList.add("fa-play");
+      }
     } else {
-      audioPlayer.play();
-      playIcon.classList.remove("fa-play");
-      playIcon.classList.add("fa-pause");
+      audioPlayer.play().catch((err) => {
+        console.error("Error playing audio:", err);
+      });
+      if (playIcon) {
+        playIcon.classList.remove("fa-play");
+        playIcon.classList.add("fa-pause");
+      }
     }
     isPlaying = !isPlaying;
   }
 
   // Rewind 15 seconds
   function rewind() {
+    if (!audioPlayer) return;
     audioPlayer.currentTime = Math.max(0, audioPlayer.currentTime - 15);
     updateProgress();
   }
 
   // Toggle volume display
   function toggleVolumeDisplay() {
+    if (!volumeContainer) return;
+
     if (volumeContainer.style.display === "block") {
       volumeContainer.style.display = "none";
     } else {
@@ -158,27 +198,37 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Toggle mute
   function toggleMute() {
+    if (!audioPlayer || !volumeIcon) return;
+
     if (isMuted) {
       audioPlayer.volume = lastVolumeLevel;
       volumeIcon.classList.remove("fa-volume-mute");
       volumeIcon.classList.add("fa-volume-up");
-      volumeSlider.value = lastVolumeLevel * 100;
+      if (volumeSlider) {
+        volumeSlider.value = lastVolumeLevel * 100;
+      }
     } else {
       lastVolumeLevel = audioPlayer.volume;
       audioPlayer.volume = 0;
       volumeIcon.classList.remove("fa-volume-up");
       volumeIcon.classList.add("fa-volume-mute");
-      volumeSlider.value = 0;
+      if (volumeSlider) {
+        volumeSlider.value = 0;
+      }
     }
     isMuted = !isMuted;
   }
 
   // Set volume
   function setVolume() {
+    if (!audioPlayer || !volumeSlider) return;
+
     const newVolume = volumeSlider.value / 100;
     audioPlayer.volume = newVolume;
 
     // Update mute state if needed
+    if (!volumeIcon) return;
+
     if (newVolume === 0) {
       if (!isMuted) {
         isMuted = true;
@@ -208,6 +258,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Update the random fact
   function updateRandomFact() {
+    if (!randomFactEl) return;
+
     const fact = getRandomFact();
     randomFactEl.textContent = fact;
 
@@ -220,6 +272,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Update the radio quote
   function updateRadioQuote() {
+    if (!radioQuote) return;
+
     const quote = getRandomQuote();
     radioQuote.innerHTML = `
             "${quote.text}"
@@ -227,74 +281,114 @@ document.addEventListener("DOMContentLoaded", function () {
         `;
   }
 
-  // Event Listeners
-  playBtn.addEventListener("click", togglePlay);
-  rewindBtn.addEventListener("click", rewind);
-  volumeBtn.addEventListener("click", toggleVolumeDisplay);
-  volumeBtn.addEventListener("dblclick", toggleMute);
-  volumeSlider.addEventListener("input", setVolume);
-  newFactBtn.addEventListener("click", updateRandomFact);
+  // Add event listeners only if elements exist
+  if (playBtn) {
+    playBtn.addEventListener("click", togglePlay);
+  }
+
+  if (rewindBtn) {
+    rewindBtn.addEventListener("click", rewind);
+  }
+
+  if (volumeBtn) {
+    volumeBtn.addEventListener("click", toggleVolumeDisplay);
+    volumeBtn.addEventListener("dblclick", toggleMute);
+  }
+
+  if (volumeSlider) {
+    volumeSlider.addEventListener("input", setVolume);
+  }
+
+  if (newFactBtn) {
+    newFactBtn.addEventListener("click", updateRandomFact);
+  }
 
   // Audio player events
-  audioPlayer.addEventListener("timeupdate", updateProgress);
-  audioPlayer.addEventListener("loadedmetadata", updateProgress);
-  audioPlayer.addEventListener("play", () => {
-    isPlaying = true;
-    playIcon.classList.remove("fa-play");
-    playIcon.classList.add("fa-pause");
-  });
-  audioPlayer.addEventListener("pause", () => {
-    isPlaying = false;
-    playIcon.classList.remove("fa-pause");
-    playIcon.classList.add("fa-play");
-  });
+  if (audioPlayer) {
+    audioPlayer.addEventListener("timeupdate", updateProgress);
+    audioPlayer.addEventListener("loadedmetadata", updateProgress);
+    audioPlayer.addEventListener("play", () => {
+      isPlaying = true;
+      if (playIcon) {
+        playIcon.classList.remove("fa-play");
+        playIcon.classList.add("fa-pause");
+      }
+    });
+    audioPlayer.addEventListener("pause", () => {
+      isPlaying = false;
+      if (playIcon) {
+        playIcon.classList.remove("fa-pause");
+        playIcon.classList.add("fa-play");
+      }
+    });
+  }
 
-  // Periodically update now playing info
-  setInterval(updateNowPlaying, 30000); // Every 30 seconds
+  // Periodically update now playing info if we're on a page with the player
+  if (audioPlayer) {
+    setInterval(updateNowPlaying, 30000); // Every 30 seconds
 
-  // Periodically update the radio quote
-  setInterval(updateRadioQuote, 60000); // Every minute
+    // Initial update
+    updateNowPlaying();
+  }
 
-  // Initialize
-  updateNowPlaying();
-  updateRadioQuote();
+  // Periodically update the radio quote if it exists
+  if (radioQuote) {
+    setInterval(updateRadioQuote, 60000); // Every minute
+
+    // Initial update
+    updateRadioQuote();
+  }
 
   // Close volume slider when clicking outside
-  document.addEventListener("click", function (event) {
-    if (
-      !volumeBtn.contains(event.target) &&
-      !volumeContainer.contains(event.target)
-    ) {
-      volumeContainer.style.display = "none";
-    }
-  });
+  if (volumeBtn && volumeContainer) {
+    document.addEventListener("click", function (event) {
+      if (
+        !volumeBtn.contains(event.target) &&
+        !volumeContainer.contains(event.target)
+      ) {
+        volumeContainer.style.display = "none";
+      }
+    });
+  }
 
-  // Keyboard shortcuts
-  document.addEventListener("keydown", function (event) {
-    // Space for play/pause
-    if (event.code === "Space" && !event.target.matches("input, textarea")) {
-      event.preventDefault();
-      togglePlay();
-    }
+  // Keyboard shortcuts (only if audioPlayer exists)
+  if (audioPlayer) {
+    document.addEventListener("keydown", function (event) {
+      // Space for play/pause
+      if (event.code === "Space" && !event.target.matches("input, textarea")) {
+        event.preventDefault();
+        togglePlay();
+      }
 
-    // Left arrow for rewind
-    if (event.code === "ArrowLeft") {
-      rewind();
-    }
+      // Left arrow for rewind
+      if (event.code === "ArrowLeft") {
+        rewind();
+      }
 
-    // Up/Down arrows for volume
-    if (event.code === "ArrowUp") {
-      volumeSlider.value = Math.min(100, parseInt(volumeSlider.value) + 5);
-      setVolume();
-    }
-    if (event.code === "ArrowDown") {
-      volumeSlider.value = Math.max(0, parseInt(volumeSlider.value) - 5);
-      setVolume();
-    }
+      // Up/Down arrows for volume
+      if (volumeSlider) {
+        if (event.code === "ArrowUp") {
+          volumeSlider.value = Math.min(100, parseInt(volumeSlider.value) + 5);
+          setVolume();
+        }
+        if (event.code === "ArrowDown") {
+          volumeSlider.value = Math.max(0, parseInt(volumeSlider.value) - 5);
+          setVolume();
+        }
+      }
 
-    // M for mute
-    if (event.code === "KeyM") {
-      toggleMute();
-    }
-  });
+      // M for mute
+      if (event.code === "KeyM") {
+        toggleMute();
+      }
+    });
+  }
+
+  // Debug output
+  console.log("McElroy Radio player initialized");
+  if (audioPlayer) {
+    console.log("Audio source:", audioPlayer.src);
+  } else {
+    console.warn("Audio player element not found");
+  }
 });
