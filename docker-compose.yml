@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  mcelroy-radio:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mcelroy-radio:latest
+    container_name: mcelroy-radio
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      # Mount the location of the audio files - uncomment and adjust paths as needed
+      - /home/user/podcasts/mbmbam:/opt/mcelroy-content/show1
+      - /home/user/podcasts/adventure-zone:/opt/mcelroy-content/show2
+      - /home/user/podcasts/sawbones:/opt/mcelroy-content/show3
+    environment:
+      - PORT=8080
+      # Optionally customize content directories
+      # - CONTENT_DIRS=/opt/mcelroy-content/show1,/opt/mcelroy-content/show2,/opt/mcelroy-content/show3
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

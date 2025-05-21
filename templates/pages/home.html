@@ -1,0 +1,135 @@
+{{ define "content" }}
+<div class="container">
+    <section class="player-section">
+        <div class="episode-info">
+            {{ if .CurrentEpisode }}
+            <div class="episode-card current-episode">
+                <div class="episode-image">
+                    <img
+                        src="{{ .CurrentEpisode.ImagePath }}"
+                        alt="{{ .CurrentEpisode.ShowName }} Cover Art"
+                    />
+                </div>
+                <div class="episode-details">
+                    <h2>Now Playing</h2>
+                    <h3>{{ .CurrentEpisode.Title }}</h3>
+                    <p class="show-name">{{ .CurrentEpisode.ShowName }}</p>
+                    <div class="fact-box">
+                        <h4>
+                            <i class="fas fa-lightbulb"></i> McElroy Fun Fact:
+                        </h4>
+                        <p id="random-fact">{{ .CurrentEpisode.RandomFact }}</p>
+                        <button id="new-fact-btn" class="btn btn-small">
+                            <i class="fas fa-sync-alt"></i> New Fact
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {{ else }}
+            <div class="episode-card">
+                <p>No episodes currently playing. Check back soon!</p>
+            </div>
+            {{ end }}
+        </div>
+
+        <div class="player-controls">
+            <div class="audio-player">
+                <audio id="audio-stream" preload="auto">
+                    <source src="/stream" type="audio/mpeg" />
+                    Your browser does not support the audio element.
+                </audio>
+
+                <div class="playback-controls">
+                    <button
+                        id="rewind-btn"
+                        class="control-btn"
+                        title="Rewind 15 seconds"
+                    >
+                        <i class="fas fa-backward"></i>
+                    </button>
+                    <button
+                        id="play-btn"
+                        class="control-btn control-btn-large"
+                        title="Play/Pause"
+                    >
+                        <i class="fas fa-play"></i>
+                    </button>
+                    <button
+                        id="volume-btn"
+                        class="control-btn"
+                        title="Adjust Volume"
+                    >
+                        <i class="fas fa-volume-up"></i>
+                    </button>
+                </div>
+
+                <div class="progress-container">
+                    <div class="progress-bar">
+                        <div id="progress" class="progress"></div>
+                    </div>
+                    <div class="time-display">
+                        <span id="current-time">00:00</span> /
+                        <span id="duration">00:00</span>
+                    </div>
+                </div>
+
+                <div
+                    class="volume-slider-container"
+                    id="volume-slider-container"
+                >
+                    <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value="80"
+                        class="volume-slider"
+                        id="volume-slider"
+                    />
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="recently-played">
+        <h2><i class="fas fa-history"></i> Recently Played</h2>
+        <div class="episode-grid">
+            {{ if .RecentEpisodes }} {{ range .RecentEpisodes }}
+            <div class="episode-card small">
+                <div class="episode-image">
+                    <img
+                        src="{{ .ImagePath }}"
+                        alt="{{ .ShowName }} Cover Art"
+                    />
+                </div>
+                <div class="episode-details">
+                    <h4>{{ .Title }}</h4>
+                    <p class="show-name">{{ .ShowName }}</p>
+                    <p class="play-time">
+                        Played:
+                        <time datetime="{{ formatTime .PlayedAt }}"
+                            >{{ formatTime .PlayedAt }}</time
+                        >
+                    </p>
+                </div>
+            </div>
+            {{ end }} {{ else }}
+            <p>No recently played episodes yet. Stay tuned!</p>
+            {{ end }}
+        </div>
+    </section>
+
+    <section class="radio-decoration">
+        <div class="radio-waves">
+            <div class="wave wave1"></div>
+            <div class="wave wave2"></div>
+            <div class="wave wave3"></div>
+        </div>
+        <div class="radio-quote">
+            <blockquote id="radio-quote">
+                "Unless..."
+                <footer>— Griffin McElroy</footer>
+            </blockquote>
+        </div>
+    </section>
+</div>
+{{ end }}
