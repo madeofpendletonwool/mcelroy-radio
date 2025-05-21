@@ -1,7 +1,3 @@
-# McElroy Radio
-
-A Go-powered internet radio station that streams McElroy family podcast content 24/7.
-
 ![McElroy Radio Banner](static/img/default-cover.png)
 
 ## About
