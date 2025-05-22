@@ -40,6 +40,7 @@ func New(cfg *config.Config) (*http.Server, error) {
 	r.Get("/now-playing", h.NowPlaying)
 	r.Get("/recent", h.RecentlyPlayed)
 	r.Get("/random-fact", h.RandomFact)
+	r.Get("/directory", h.DirectoryPage)
 	r.Get("/stream-position", h.StreamPosition)
 
 	// Static file server

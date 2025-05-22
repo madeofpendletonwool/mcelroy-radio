@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   mcelroy-radio:
     build:
@@ -12,9 +10,9 @@ services:
       - "8080:8080"
     volumes:
       # Mount the location of the audio files - uncomment and adjust paths as needed
-      - /Users/collin_pendleton/Documents/github/mcelroy-radio/mbmbam:/opt/mcelroy-content/show1
-      - /Users/collin_pendleton/Documents/github/mcelroy-radio/adventure-zone:/opt/mcelroy-content/show2
-      - /Users/collin_pendleton/Documents/github/mcelroy-radio/sawbones:/opt/mcelroy-content/show3
+      - /home/collinp/Documents/github/mcelroy-radio/mbmbam:/opt/mcelroy-content/show1
+      - /home/collinp/Documents/github/mcelroy-radio/adventure-zone:/opt/mcelroy-content/show2
+      - /home/collinp/Documents/github/mcelroy-radio/sawbones:/opt/mcelroy-content/show3
     environment:
       - PORT=8080
       # Optionally customize content directories

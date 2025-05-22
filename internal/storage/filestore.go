@@ -157,3 +157,43 @@ func (fs *FileStore) GetRecentlyPlayed() []*models.Episode {
 	defer fs.episodesMutex.RUnlock()
 	return fs.RecentlyPlayed
 }
+
+// Add these methods to your filestore.go file
+
+// GetAllEpisodes returns all discovered episodes
+func (fs *FileStore) GetAllEpisodes() []*models.Episode {
+	fs.episodesMutex.RLock()
+	defer fs.episodesMutex.RUnlock()
+
+	// Return a copy to avoid race conditions
+	episodes := make([]*models.Episode, len(fs.Episodes))
+	copy(episodes, fs.Episodes)
+	return episodes
+}
+
+// GetEpisodeByID returns a specific episode by its ID (file path)
+func (fs *FileStore) GetEpisodeByID(id string) *models.Episode {
+	fs.episodesMutex.RLock()
+	defer fs.episodesMutex.RUnlock()
+
+	for _, episode := range fs.Episodes {
+		if episode.ID == id {
+			return episode
+		}
+	}
+	return nil
+}
+
+// GetEpisodesByShow returns all episodes for a specific show
+func (fs *FileStore) GetEpisodesByShow(showName string) []*models.Episode {
+	fs.episodesMutex.RLock()
+	defer fs.episodesMutex.RUnlock()
+
+	var episodes []*models.Episode
+	for _, episode := range fs.Episodes {
+		if episode.ShowName == showName {
+			episodes = append(episodes, episode)
+		}
+	}
+	return episodes
+}
