@@ -5,15 +5,16 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/madeofpendletonwool/mcelroy-radio/internal/config"
 	"github.com/madeofpendletonwool/mcelroy-radio/internal/models"
 	"github.com/madeofpendletonwool/mcelroy-radio/internal/player"
@@ -301,72 +302,205 @@ func (h *Handler) DownloadEpisode(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, episode.AudioPath)
 }
 
-// StreamAudio handles streaming audio to the client
+// parseRange parses HTTP Range header
+func parseRange(rangeHeader string, fileSize int64) (start, end int64, err error) {
+	if rangeHeader == "" {
+		return 0, fileSize - 1, nil
+	}
+
+	// Remove "bytes=" prefix
+	rangeHeader = strings.TrimPrefix(rangeHeader, "bytes=")
+
+	// Handle single range (we don't support multipart ranges)
+	parts := strings.Split(rangeHeader, "-")
+	if len(parts) != 2 {
+		return 0, 0, fmt.Errorf("invalid range format")
+	}
+
+	startStr, endStr := parts[0], parts[1]
+
+	// Parse start
+	if startStr == "" {
+		// Suffix range: -500 means last 500 bytes
+		if endStr == "" {
+			return 0, 0, fmt.Errorf("invalid range format")
+		}
+		suffixLength, err := strconv.ParseInt(endStr, 10, 64)
+		if err != nil {
+			return 0, 0, err
+		}
+		start = fileSize - suffixLength
+		if start < 0 {
+			start = 0
+		}
+		end = fileSize - 1
+	} else {
+		// Regular range
+		start, err = strconv.ParseInt(startStr, 10, 64)
+		if err != nil {
+			return 0, 0, err
+		}
+
+		if endStr == "" {
+			// Open-ended: 500- means from byte 500 to end
+			end = fileSize - 1
+		} else {
+			end, err = strconv.ParseInt(endStr, 10, 64)
+			if err != nil {
+				return 0, 0, err
+			}
+		}
+	}
+
+	// Validate range
+	if start < 0 || end >= fileSize || start > end {
+		return 0, 0, fmt.Errorf("invalid range")
+	}
+
+	return start, end, nil
+}
+
+// StreamAudio handles streaming audio to the client with proper Range support
 func (h *Handler) StreamAudio(w http.ResponseWriter, r *http.Request) {
 	log.Printf("New audio stream request from %s", r.RemoteAddr)
 
-	// Set headers for audio streaming
-	w.Header().Set("Content-Type", "audio/mpeg")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-	w.Header().Set("Transfer-Encoding", "chunked")
+	// Get current episode
+	h.mu.RLock()
+	currentEpisode := h.fileStore.GetCurrentEpisode()
+	h.mu.RUnlock()
 
-	// Flush headers immediately
-	if flusher, ok := w.(http.Flusher); ok {
-		flusher.Flush()
+	if currentEpisode == nil {
+		log.Printf("No current episode available")
+		http.Error(w, "No audio available", http.StatusNotFound)
+		return
 	}
 
-	// Create unique ID for this listener
-	listenerID := uuid.New().String()
-	log.Printf("Created listener %s", listenerID)
+	// Open the file
+	file, err := os.Open(currentEpisode.AudioPath)
+	if err != nil {
+		log.Printf("Failed to open audio file: %v", err)
+		http.Error(w, "Audio file not found", http.StatusNotFound)
+		return
+	}
+	defer file.Close()
 
-	// Register as a listener and get data channel
-	dataChan := h.player.AddListener(listenerID)
+	// Get file size
+	stat, err := file.Stat()
+	if err != nil {
+		log.Printf("Failed to stat audio file: %v", err)
+		http.Error(w, "Audio file error", http.StatusInternalServerError)
+		return
+	}
+	fileSize := stat.Size()
 
-	// Make sure we clean up when the client disconnects
-	defer func() {
-		h.player.RemoveListener(listenerID)
-		log.Printf("Disconnected listener %s", listenerID)
-	}()
+	// Parse Range header
+	rangeHeader := r.Header.Get("Range")
+	start, end, err := parseRange(rangeHeader, fileSize)
+	if err != nil {
+		log.Printf("Invalid range header: %v", err)
+		http.Error(w, "Invalid range", http.StatusRequestedRangeNotSatisfiable)
+		return
+	}
 
-	// Set up a notifier for client disconnection
-	notify := r.Context().Done()
+	// Check if this is a "radio sync" request (no range header on first request)
+	// In this case, we want to start from the server's current position
+	if rangeHeader == "" {
+		// Get server's current time position and convert to byte offset
+		serverTimePosition := h.player.GetCurrentTimePosition()
+		if serverTimePosition > 0 && currentEpisode.Duration > 0 {
+			// Estimate byte position based on time
+			// For MP3: rough calculation is fileSize / duration * currentTime
+			estimatedBytePos := int64(float64(fileSize) * (serverTimePosition / currentEpisode.Duration))
 
-	log.Printf("Starting audio stream for listener %s", listenerID)
+			// Align to a reasonable boundary (every 1KB) to avoid cutting mid-frame
+			estimatedBytePos = (estimatedBytePos / 1024) * 1024
 
-	// Stream data to client
-	for {
-		select {
-		case data, ok := <-dataChan:
-			if !ok {
-				// Channel closed, end streaming
-				log.Printf("Data channel closed for listener %s", listenerID)
-				return
+			if estimatedBytePos > 0 && estimatedBytePos < fileSize {
+				start = estimatedBytePos
+				log.Printf("Radio sync: starting from byte %d (time %.2fs)", start, serverTimePosition)
 			}
+		}
+	}
 
-			// Skip empty data (from cleanup routine)
-			if len(data) == 0 {
-				continue
-			}
+	// Set common headers
+	w.Header().Set("Content-Type", "audio/mpeg")
+	w.Header().Set("Accept-Ranges", "bytes")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
 
-			// Write chunk to response
-			_, err := w.Write(data)
-			if err != nil {
-				log.Printf("Error writing to client %s: %v", listenerID, err)
-				return
-			}
+	contentLength := end - start + 1
 
-			// Flush immediately
-			if flusher, ok := w.(http.Flusher); ok {
-				flusher.Flush()
-			}
+	if rangeHeader != "" {
+		// Partial content response
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, fileSize))
+		w.Header().Set("Content-Length", strconv.FormatInt(contentLength, 10))
+		w.WriteHeader(http.StatusPartialContent)
+		log.Printf("Serving partial content: bytes %d-%d/%d", start, end, fileSize)
+	} else {
+		// Full content response (but potentially starting from middle)
+		w.Header().Set("Content-Length", strconv.FormatInt(contentLength, 10))
+		w.WriteHeader(http.StatusOK)
+		log.Printf("Serving content from byte %d, length %d", start, contentLength)
+	}
 
-		case <-notify:
-			// Client disconnected
-			log.Printf("Client disconnected: %s", listenerID)
+	// Seek to start position
+	if start > 0 {
+		_, err = file.Seek(start, io.SeekStart)
+		if err != nil {
+			log.Printf("Failed to seek in file: %v", err)
 			return
 		}
 	}
+
+	// Create a limited reader to ensure we don't read past the end
+	limitedReader := io.LimitReader(file, contentLength)
+
+	// Stream the content
+	buffer := make([]byte, 32768) // 32KB buffer
+	written := int64(0)
+
+	for written < contentLength {
+		n, err := limitedReader.Read(buffer)
+		if err != nil && err != io.EOF {
+			log.Printf("Error reading file: %v", err)
+			return
+		}
+		if n == 0 {
+			break
+		}
+
+		bytesToWrite := int64(n)
+		if written+bytesToWrite > contentLength {
+			bytesToWrite = contentLength - written
+		}
+
+		_, writeErr := w.Write(buffer[:bytesToWrite])
+		if writeErr != nil {
+			log.Printf("Error writing to client: %v", writeErr)
+			return
+		}
+
+		// Flush immediately for streaming
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+
+		written += bytesToWrite
+
+		// Check if client disconnected
+		select {
+		case <-r.Context().Done():
+			log.Printf("Client disconnected during streaming")
+			return
+		default:
+		}
+
+		// Small delay to control streaming rate
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	log.Printf("Successfully streamed %d bytes to client", written)
 }
 
 func (h *Handler) StreamPosition(w http.ResponseWriter, r *http.Request) {

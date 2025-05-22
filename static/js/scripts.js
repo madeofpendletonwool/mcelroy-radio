@@ -21,83 +21,257 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Initialize player state
   let isPlaying = false;
-  let isMuted = true; // Start muted to allow autoplay
+  let isMuted = false; // Start unmuted since user will click to play
   let volumeLevel = 0.8;
   let lastVolumeLevel = volumeLevel;
-  let streamStartTime = 0;
-  let serverTimeOffset = 0;
-  let isFirstPlay = true;
-  let reconnectAttempts = 0;
-  let maxReconnectAttempts = 5;
-  let reconnectDelay = 1000; // Start with 1 second
+  let currentEpisodeId = null;
+  let progressUpdateInterval = null;
 
   // Set initial state for audio
   if (audioPlayer) {
-    audioPlayer.volume = 0; // Start muted for autoplay compliance
-    audioPlayer.muted = true;
-    audioPlayer.preload = "none"; // Don't preload for streaming
+    audioPlayer.volume = volumeLevel; // Start at normal volume
+    audioPlayer.muted = false; // Start unmuted
+    audioPlayer.preload = "metadata"; // Load metadata for duration
+
+    // Set up audio event listeners
+    audioPlayer.addEventListener("loadstart", () => {
+      console.log("Audio load started");
+    });
+
+    audioPlayer.addEventListener("loadedmetadata", () => {
+      console.log("Audio metadata loaded");
+      if (audioPlayer.duration && durationEl) {
+        durationEl.textContent = formatTime(audioPlayer.duration);
+      }
+    });
+
+    audioPlayer.addEventListener("canplay", () => {
+      console.log("Audio can play");
+    });
+
+    audioPlayer.addEventListener("play", () => {
+      isPlaying = true;
+      if (playIcon) {
+        playIcon.classList.remove("fa-play");
+        playIcon.classList.add("fa-pause");
+      }
+      startProgressUpdates();
+      console.log("Audio started playing");
+    });
+
+    audioPlayer.addEventListener("pause", () => {
+      isPlaying = false;
+      if (playIcon) {
+        playIcon.classList.remove("fa-pause");
+        playIcon.classList.add("fa-play");
+      }
+      stopProgressUpdates();
+      console.log("Audio paused");
+    });
+
+    audioPlayer.addEventListener("timeupdate", () => {
+      updateProgress();
+    });
+
+    audioPlayer.addEventListener("error", (e) => {
+      console.error("Audio error:", e);
+      isPlaying = false;
+      stopProgressUpdates();
+
+      // Show user-friendly error message
+      showNotification("Audio playback error. Please try refreshing the page.");
+    });
+
+    audioPlayer.addEventListener("stalled", () => {
+      console.warn("Audio stream stalled - buffering");
+    });
+
+    audioPlayer.addEventListener("waiting", () => {
+      console.log("Audio waiting for data - buffering");
+    });
+
+    audioPlayer.addEventListener("ended", () => {
+      console.log("Audio stream ended");
+      isPlaying = false;
+      stopProgressUpdates();
+      // The radio should continue with the next episode automatically
+      setTimeout(checkForNewEpisode, 2000);
+    });
   }
 
   if (volumeSlider) {
     volumeSlider.value = volumeLevel * 100;
   }
 
-  // Initialize streaming connection
-  function initializeStream() {
-    console.log("Initializing stream...");
+  // Set initial volume icon state
+  if (volumeIcon) {
+    volumeIcon.classList.remove("fa-volume-mute");
+    volumeIcon.classList.add("fa-volume-up");
+  }
 
-    // Reset the audio source to force a new connection
-    if (audioPlayer) {
-      // Add timestamp to prevent caching
-      const streamUrl = `/stream?t=${Date.now()}`;
-      audioPlayer.src = streamUrl;
+  // Initialize the audio source and sync with server position
+  function initializeAudio() {
+    if (!audioPlayer) return;
 
-      // Get current position from server
-      fetch("/stream-position")
-        .then((response) => response.json())
-        .then((data) => {
-          console.log("Stream position data:", data);
-          streamStartTime = data.position || 0;
-          serverTimeOffset =
-            (data.timestamp || 0) - Math.floor(Date.now() / 1000);
+    // Get current server position first
+    fetch("/stream-position")
+      .then((response) => response.json())
+      .then((data) => {
+        const serverTimePosition = data.time_position || 0;
 
-          // Load the new source
-          audioPlayer.load();
+        // Set the stream URL (browser will handle Range requests automatically)
+        const streamUrl = `/stream?t=${Date.now()}`;
 
-          // Attempt autoplay (will be muted due to browser policies)
-          return audioPlayer.play();
-        })
-        .then(() => {
-          console.log("Autoplay started successfully");
-          isPlaying = true;
-          reconnectAttempts = 0; // Reset on successful connection
+        if (audioPlayer.src !== window.location.origin + streamUrl) {
+          console.log("Setting audio source:", streamUrl);
+          console.log("Server is at position:", serverTimePosition, "seconds");
 
-          if (playIcon) {
-            playIcon.classList.remove("fa-play");
-            playIcon.classList.add("fa-pause");
-          }
+          audioPlayer.src = streamUrl;
 
-          // Show notification about unmuting
-          showNotification("McElroy Radio playing (click volume to unmute)");
-        })
-        .catch((error) => {
-          console.error("Stream initialization failed:", error);
-          isPlaying = false;
-
-          // Try to reconnect if we haven't exceeded max attempts
-          if (reconnectAttempts < maxReconnectAttempts) {
-            reconnectAttempts++;
-            console.log(
-              `Reconnection attempt ${reconnectAttempts}/${maxReconnectAttempts} in ${reconnectDelay}ms`,
+          // Wait for metadata to load so we can seek
+          const handleLoadedMetadata = () => {
+            audioPlayer.removeEventListener(
+              "loadedmetadata",
+              handleLoadedMetadata,
             );
-            setTimeout(initializeStream, reconnectDelay);
-            reconnectDelay = Math.min(reconnectDelay * 2, 10000); // Exponential backoff, max 10 seconds
+
+            // Seek to server position
+            if (serverTimePosition > 0 && audioPlayer.duration) {
+              // Make sure we don't seek past the end
+              const seekPosition = Math.min(
+                serverTimePosition,
+                audioPlayer.duration - 1,
+              );
+              console.log("Seeking to position:", seekPosition, "seconds");
+              audioPlayer.currentTime = seekPosition;
+            }
+
+            // Try autoplay (will be muted due to browser policies)
+            const playPromise = audioPlayer.play();
+            if (playPromise !== undefined) {
+              playPromise
+                .then(() => {
+                  console.log("Autoplay started successfully");
+                  showNotification(
+                    "McElroy Radio playing (click volume to unmute)",
+                  );
+                })
+                .catch((error) => {
+                  console.log("Autoplay prevented by browser:", error.message);
+                  showNotification("Click the play button to start listening");
+                });
+            }
+          };
+
+          if (audioPlayer.readyState >= 1) {
+            // Metadata already loaded
+            handleLoadedMetadata();
           } else {
-            showNotification(
-              "Unable to connect to stream. Please refresh the page.",
+            // Wait for metadata to load
+            audioPlayer.addEventListener(
+              "loadedmetadata",
+              handleLoadedMetadata,
             );
           }
-        });
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to get server position:", error);
+        // Fallback to normal initialization
+        const streamUrl = `/stream?t=${Date.now()}`;
+        audioPlayer.src = streamUrl;
+        audioPlayer.play().catch(console.error);
+      });
+  }
+
+  // Check for new episodes and update source if needed
+  function checkForNewEpisode() {
+    fetch("/now-playing")
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then((data) => {
+        if (data.id && data.id !== currentEpisodeId) {
+          console.log("New episode detected:", data.title);
+          currentEpisodeId = data.id;
+
+          // Update the audio source for the new episode
+          const streamUrl = `/stream?t=${Date.now()}`;
+          audioPlayer.src = streamUrl;
+
+          // Reset to beginning for new episodes
+          audioPlayer.currentTime = 0;
+
+          // If we were playing, continue playing the new episode
+          if (isPlaying) {
+            audioPlayer.play().catch(console.error);
+          }
+        } else if (data.id === currentEpisodeId) {
+          // Same episode - sync position if we're significantly off
+          const serverTime = data.time_position || 0;
+          const clientTime = audioPlayer.currentTime || 0;
+          const timeDiff = Math.abs(serverTime - clientTime);
+
+          // If we're more than 10 seconds off, resync
+          if (
+            timeDiff > 10 &&
+            audioPlayer.duration &&
+            serverTime < audioPlayer.duration
+          ) {
+            console.log(
+              `Resyncing position: server=${serverTime}s, client=${clientTime}s, diff=${timeDiff}s`,
+            );
+            audioPlayer.currentTime = serverTime;
+          }
+        }
+
+        // Update UI with episode info
+        updateUIWithEpisodeData(data);
+      })
+      .catch((err) => {
+        console.error("Error checking for new episode:", err);
+      });
+  }
+
+  // Update UI with episode data
+  function updateUIWithEpisodeData(data) {
+    if (randomFactEl && data.random_fact) {
+      randomFactEl.textContent = data.random_fact;
+    }
+  }
+
+  // Update progress bar and time display
+  function updateProgress() {
+    if (!audioPlayer || !currentTimeEl) return;
+
+    const currentTime = audioPlayer.currentTime;
+    const duration = audioPlayer.duration;
+
+    if (currentTimeEl) {
+      currentTimeEl.textContent = formatTime(currentTime);
+    }
+
+    if (duration && progressBar && !isNaN(duration)) {
+      const progressPercent = (currentTime / duration) * 100;
+      progressBar.style.width = `${Math.min(progressPercent, 100)}%`;
+    }
+  }
+
+  // Start regular progress updates
+  function startProgressUpdates() {
+    if (progressUpdateInterval) return;
+
+    progressUpdateInterval = setInterval(() => {
+      updateProgress();
+    }, 1000);
+  }
+
+  // Stop progress updates
+  function stopProgressUpdates() {
+    if (progressUpdateInterval) {
+      clearInterval(progressUpdateInterval);
+      progressUpdateInterval = null;
     }
   }
 
@@ -119,6 +293,7 @@ document.addEventListener("DOMContentLoaded", function () {
         box-shadow: 0 2px 10px rgba(0,0,0,0.2);
         font-family: inherit;
         font-size: 14px;
+        max-width: 300px;
       `;
       document.body.appendChild(notification);
     }
@@ -130,47 +305,6 @@ document.addEventListener("DOMContentLoaded", function () {
     setTimeout(() => {
       notification.style.display = "none";
     }, 5000);
-  }
-
-  // Update now playing info and progress
-  function updateNowPlaying() {
-    fetch("/now-playing")
-      .then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
-      })
-      .then((data) => {
-        console.log("Now playing data:", data);
-
-        // Update UI with current episode info
-        if (randomFactEl && data.random_fact) {
-          randomFactEl.textContent = data.random_fact;
-        }
-
-        // Update time display based on server position
-        if (data.time_position && currentTimeEl) {
-          currentTimeEl.textContent = formatTime(data.time_position);
-        }
-
-        // Update duration if available
-        if (data.duration && durationEl && data.duration > 0) {
-          durationEl.textContent = formatTime(data.duration);
-        }
-
-        // Update progress bar
-        if (
-          data.time_position &&
-          data.duration &&
-          progressBar &&
-          data.duration > 0
-        ) {
-          const progressPercent = (data.time_position / data.duration) * 100;
-          progressBar.style.width = `${Math.min(progressPercent, 100)}%`;
-        }
-      })
-      .catch((err) => {
-        console.error("Error fetching now playing info:", err);
-      });
   }
 
   // Format time from seconds to MM:SS or HH:MM:SS
@@ -196,39 +330,36 @@ document.addEventListener("DOMContentLoaded", function () {
 
     if (isPlaying) {
       audioPlayer.pause();
-      if (playIcon) {
-        playIcon.classList.remove("fa-pause");
-        playIcon.classList.add("fa-play");
-      }
-      isPlaying = false;
       console.log("Paused");
     } else {
       // If it's the first play and we're muted, show unmute hint
-      if (isMuted && isFirstPlay) {
+      if (isMuted) {
         showNotification("Click the volume button to unmute audio");
+      }
+
+      // If we don't have a source or the audio isn't ready, initialize first
+      if (!audioPlayer.src || audioPlayer.readyState === 0) {
+        initializeAudio();
+        return;
       }
 
       const playPromise = audioPlayer.play();
       if (playPromise !== undefined) {
         playPromise
           .then(() => {
-            if (playIcon) {
-              playIcon.classList.remove("fa-play");
-              playIcon.classList.add("fa-pause");
-            }
-            isPlaying = true;
-            isFirstPlay = false;
             console.log("Playing");
           })
           .catch((error) => {
             console.error("Play failed:", error);
-            showNotification("Playback failed. Try refreshing the page.");
+            showNotification(
+              "Playback failed. Please try refreshing the page.",
+            );
           });
       }
     }
   }
 
-  // Rewind functionality (note: this just seeks in the client buffer, not the server stream)
+  // Rewind functionality
   function rewind() {
     if (audioPlayer && audioPlayer.currentTime > 15) {
       audioPlayer.currentTime = Math.max(0, audioPlayer.currentTime - 15);
@@ -368,74 +499,18 @@ document.addEventListener("DOMContentLoaded", function () {
   if (volumeSlider) volumeSlider.addEventListener("input", setVolume);
   if (newFactBtn) newFactBtn.addEventListener("click", getRandomFact);
 
-  // Audio player events
-  if (audioPlayer) {
-    audioPlayer.addEventListener("loadstart", () => {
-      console.log("Started loading stream");
-    });
-
-    audioPlayer.addEventListener("canplay", () => {
-      console.log("Stream can play");
-    });
-
-    audioPlayer.addEventListener("play", () => {
-      isPlaying = true;
-      if (playIcon) {
-        playIcon.classList.remove("fa-play");
-        playIcon.classList.add("fa-pause");
-      }
-      console.log("Audio started playing");
-    });
-
-    audioPlayer.addEventListener("pause", () => {
-      isPlaying = false;
-      if (playIcon) {
-        playIcon.classList.remove("fa-pause");
-        playIcon.classList.add("fa-play");
-      }
-      console.log("Audio paused");
-    });
-
-    audioPlayer.addEventListener("error", (e) => {
-      console.error("Audio error:", e);
-      isPlaying = false;
-
-      // Try to reconnect after error
-      if (reconnectAttempts < maxReconnectAttempts) {
-        console.log("Attempting to reconnect due to audio error...");
-        setTimeout(initializeStream, 3000);
-      } else {
-        showNotification("Audio stream error. Please refresh the page.");
-      }
-    });
-
-    audioPlayer.addEventListener("stalled", () => {
-      console.warn("Audio stream stalled");
-    });
-
-    audioPlayer.addEventListener("waiting", () => {
-      console.log("Audio waiting for data");
-    });
-  }
-
-  // Update episode info on page load and periodically
-  updateNowPlaying();
-  const nowPlayingInterval = setInterval(updateNowPlaying, 15000); // Every 15 seconds
+  // Initialize episode checking
+  checkForNewEpisode();
+  const episodeCheckInterval = setInterval(checkForNewEpisode, 30000); // Check every 30 seconds
 
   // Update the radio quote periodically
   updateRadioQuote();
   const quoteInterval = setInterval(updateRadioQuote, 60000); // Every minute
 
-  // Initialize the stream
-  initializeStream();
-
-  // Add visibility change handler to reconnect when user returns to tab
-  document.addEventListener("visibilitychange", function () {
-    if (!document.hidden && !isPlaying) {
-      console.log("Page became visible, attempting to reconnect...");
-      initializeStream();
-    }
-  });
+  // Initialize the audio after a short delay
+  setTimeout(() => {
+    initializeAudio();
+  }, 1000);
 
   // Close volume slider when clicking outside
   document.addEventListener("click", function (event) {
@@ -486,7 +561,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Cleanup on page unload
   window.addEventListener("beforeunload", function () {
-    if (nowPlayingInterval) clearInterval(nowPlayingInterval);
+    if (episodeCheckInterval) clearInterval(episodeCheckInterval);
     if (quoteInterval) clearInterval(quoteInterval);
+    if (progressUpdateInterval) clearInterval(progressUpdateInterval);
   });
 });
