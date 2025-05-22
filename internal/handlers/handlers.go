@@ -185,6 +185,29 @@ func (h *Handler) StreamAudio(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *Handler) StreamPosition(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+
+	currentPosition := h.player.GetCurrentPosition()
+	currentEpisode := h.fileStore.GetCurrentEpisode()
+
+	response := map[string]interface{}{
+		"position":  currentPosition,
+		"timestamp": time.Now().Unix(),
+	}
+
+	if currentEpisode != nil {
+		response["episode_id"] = currentEpisode.ID
+		response["show_name"] = currentEpisode.ShowName
+		response["title"] = currentEpisode.Title
+	}
+
+	json.NewEncoder(w).Encode(response)
+}
+
 // NowPlaying returns information about the currently playing episode
 func (h *Handler) NowPlaying(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")

@@ -56,7 +56,7 @@
 
         <div class="player-controls">
             <div class="audio-player">
-                <audio id="audio-stream" preload="auto">
+                <audio id="audio-stream" preload="auto" autoplay>
                     <source src="/stream" type="audio/mpeg" />
                     Your browser does not support the audio element.
                 </audio>
@@ -81,7 +81,7 @@
                         class="control-btn"
                         title="Adjust Volume"
                     >
-                        <i class="fas fa-volume-up"></i>
+                        <i class="fas fa-volume-mute"></i>
                     </button>
                 </div>
 
@@ -91,14 +91,13 @@
                     </div>
                     <div class="time-display">
                         <span id="current-time">00:00</span> /
-                        <span id="duration">00:00</span>
+                        <span id="duration">--:--</span>
                     </div>
                 </div>
 
                 <div
                     class="volume-slider-container"
                     id="volume-slider-container"
-                    style="display: none"
                 >
                     <input
                         type="range"
