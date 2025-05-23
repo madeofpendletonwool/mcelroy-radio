@@ -1,289 +1,555 @@
-document.addEventListener("DOMContentLoaded", function () {
-  // Player elements
-  const audioPlayer = document.getElementById("audio-stream");
-  const playBtn = document.getElementById("play-btn");
-  const playIcon = playBtn ? playBtn.querySelector("i") : null;
-  const rewindBtn = document.getElementById("rewind-btn");
-  const volumeBtn = document.getElementById("volume-btn");
-  const volumeIcon = volumeBtn ? volumeBtn.querySelector("i") : null;
-  const volumeSlider = document.getElementById("volume-slider");
-  const volumeContainer = document.getElementById("volume-slider-container");
-  const progressBar = document.getElementById("progress");
-  const currentTimeEl = document.getElementById("current-time");
-  const durationEl = document.getElementById("duration");
+// Global Radio Player Manager with Client-Side Navigation
+class GlobalRadioPlayer {
+  constructor() {
+    // Player state
+    this.isPlaying = false;
+    this.isMuted = false;
+    this.volumeLevel = 0.8;
+    this.lastVolumeLevel = this.volumeLevel;
+    this.currentEpisodeId = null;
+    this.progressUpdateInterval = null;
+    this.loadingTimeout = null;
+    this.isStreamReady = false;
+    this.episodeCheckInterval = null;
+    this.isInitialized = false;
 
-  // Loading elements
-  const loadingOverlay = document.getElementById("loading-overlay");
-  const loadingStatus = document.getElementById("loading-status");
-  const skipLoadingBtn = document.getElementById("skip-loading-btn");
+    // DOM elements
+    this.audioPlayer = null;
+    this.playerBar = null;
+    this.playBtn = null;
+    this.playIcon = null;
+    this.rewindBtn = null;
+    this.volumeBtn = null;
+    this.volumeIcon = null;
+    this.volumeSlider = null;
+    this.volumeContainer = null;
+    this.progressBar = null;
+    this.progress = null;
+    this.currentTimeEl = null;
+    this.durationEl = null;
+    this.loadingOverlay = null;
+    this.loadingStatus = null;
+    this.episodeTitle = null;
+    this.showName = null;
+    this.episodeCover = null;
 
-  // Episode info elements
-  const episodeTitle = document.getElementById("episode-title");
-  const showName = document.getElementById("show-name");
-  const episodeCover = document.getElementById("episode-cover-art");
+    // Loading states
+    this.LoadingStates = {
+      INITIALIZING: "Initializing player...",
+      FETCHING_POSITION: "Getting current position...",
+      LOADING_STREAM: "Loading audio stream...",
+      BUFFERING: "Buffering audio...",
+      READY: "Ready to play!",
+      ERROR: "Connection failed",
+    };
 
-  // Random fact elements
-  const randomFactEl = document.getElementById("random-fact");
-  const newFactBtn = document.getElementById("new-fact-btn");
+    console.log("🎵 Global Radio Player initialized");
+  }
 
-  // Radio quote element
-  const radioQuote = document.getElementById("radio-quote");
+  init() {
+    console.log("🎵 Starting Global Radio Player initialization");
 
-  // Initialize player state
-  let isPlaying = false;
-  let isMuted = false;
-  let volumeLevel = 0.8;
-  let lastVolumeLevel = volumeLevel;
-  let currentEpisodeId = null;
-  let progressUpdateInterval = null;
-  let loadingTimeout = null;
-  let isStreamReady = false;
+    this.setupPersistentAudio();
+    this.bindElements();
+    this.setupAudioPlayer();
+    this.setupEventListeners();
+    this.setupMediaSession();
+    this.setupNavigationHandling();
 
-  // Loading states
-  const LoadingStates = {
-    INITIALIZING: "Initializing player...",
-    FETCHING_POSITION: "Getting current position...",
-    LOADING_STREAM: "Loading audio stream...",
-    BUFFERING: "Buffering audio...",
-    READY: "Ready to play!",
-    ERROR: "Connection failed",
-  };
+    // Only initialize audio stream on first load
+    if (!this.isInitialized) {
+      this.initializeAudio();
+      this.startEpisodeChecking();
+      this.isInitialized = true;
+    } else {
+      // On subsequent page loads, just sync the UI
+      this.syncUIWithAudioState();
+      this.setStreamReady(true);
+    }
 
-  // Set initial disabled state for controls
-  setControlsEnabled(false);
+    console.log("🎵 Global Radio Player setup complete");
+  }
 
-  // Set initial state for audio
-  if (audioPlayer) {
-    audioPlayer.volume = volumeLevel;
-    audioPlayer.muted = false;
-    audioPlayer.preload = "metadata";
+  setupPersistentAudio() {
+    // Look for existing persistent audio element
+    let existingAudio = document.getElementById("persistent-global-audio");
 
-    // Set up audio event listeners
-    audioPlayer.addEventListener("loadstart", () => {
+    if (existingAudio) {
+      console.log("🎵 Found existing persistent audio element, reusing it");
+      this.audioPlayer = existingAudio;
+
+      // Restore state from existing audio
+      this.isPlaying = !existingAudio.paused;
+      this.volumeLevel = existingAudio.volume;
+      this.isMuted = existingAudio.muted;
+
+      console.log(
+        `🎵 Audio state - playing: ${this.isPlaying}, volume: ${this.volumeLevel}, currentTime: ${existingAudio.currentTime}`,
+      );
+      return;
+    }
+
+    // Create new persistent audio element only if none exists
+    console.log("🎵 Creating new persistent audio element");
+    this.audioPlayer = document.createElement("audio");
+    this.audioPlayer.id = "persistent-global-audio";
+    this.audioPlayer.preload = "auto";
+    this.audioPlayer.style.display = "none";
+
+    // Append to body so it persists across navigation
+    document.body.appendChild(this.audioPlayer);
+  }
+
+  bindElements() {
+    // Player bar and controls (recreated on each page)
+    this.playerBar = document.getElementById("global-player-bar");
+    this.playBtn = document.getElementById("player-play-btn");
+    this.playIcon = this.playBtn?.querySelector("i");
+    this.rewindBtn = document.getElementById("player-rewind-btn");
+    this.volumeBtn = document.getElementById("player-volume-btn");
+    this.volumeIcon = this.volumeBtn?.querySelector("i");
+    this.volumeSlider = document.getElementById("player-volume-slider");
+    this.volumeContainer = document.getElementById(
+      "player-volume-slider-container",
+    );
+
+    // Progress elements
+    this.progressBar = document.getElementById("player-progress-bar");
+    this.progress = document.getElementById("player-progress");
+    this.currentTimeEl = document.getElementById("player-current-time");
+    this.durationEl = document.getElementById("player-duration");
+
+    // Loading elements
+    this.loadingOverlay = document.getElementById("player-loading-overlay");
+    this.loadingStatus = document.getElementById("player-loading-status");
+
+    // Episode info elements
+    this.episodeTitle = document.getElementById("player-episode-title");
+    this.showName = document.getElementById("player-show-name");
+    this.episodeCover = document.getElementById("player-episode-cover");
+
+    // Set initial state
+    this.setControlsEnabled(this.isStreamReady);
+  }
+
+  syncUIWithAudioState() {
+    console.log("🎵 Syncing UI with current audio state");
+
+    // Update play button
+    if (this.playIcon) {
+      if (this.isPlaying) {
+        this.playIcon.classList.remove("fa-play");
+        this.playIcon.classList.add("fa-pause");
+      } else {
+        this.playIcon.classList.remove("fa-pause");
+        this.playIcon.classList.add("fa-play");
+      }
+    }
+
+    // Update volume controls
+    if (this.volumeSlider) {
+      this.volumeSlider.value = this.volumeLevel * 100;
+    }
+
+    if (this.volumeIcon) {
+      this.volumeIcon.classList.remove("fa-volume-mute", "fa-volume-up");
+      if (this.isMuted || this.volumeLevel === 0) {
+        this.volumeIcon.classList.add("fa-volume-mute");
+      } else {
+        this.volumeIcon.classList.add("fa-volume-up");
+      }
+    }
+
+    // Update duration if available
+    if (this.audioPlayer && this.audioPlayer.duration && this.durationEl) {
+      this.durationEl.textContent = this.formatTime(this.audioPlayer.duration);
+    }
+
+    // Start progress updates if playing
+    if (this.isPlaying) {
+      this.startProgressUpdates();
+    }
+
+    // Sync episode info
+    this.checkForNewEpisode();
+  }
+
+  setupNavigationHandling() {
+    // Intercept navigation links for client-side routing
+    document.addEventListener("click", (e) => {
+      const link = e.target.closest("a[href]");
+      if (link && this.isInternalLink(link.href)) {
+        e.preventDefault();
+        this.navigateToPage(link.href);
+      }
+    });
+
+    // Handle browser back/forward buttons
+    window.addEventListener("popstate", (e) => {
+      if (e.state && e.state.url) {
+        this.navigateToPage(e.state.url, false);
+      }
+    });
+
+    // Save initial state
+    history.replaceState(
+      { url: window.location.pathname },
+      "",
+      window.location.pathname,
+    );
+  }
+
+  isInternalLink(href) {
+    // Check if link is internal (same origin and not external)
+    try {
+      const url = new URL(href, window.location.origin);
+      return (
+        url.origin === window.location.origin &&
+        !href.includes("download") &&
+        !href.includes(".mp3") &&
+        !href.includes("mailto:") &&
+        !href.includes("tel:")
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  async navigateToPage(url, pushState = true) {
+    try {
+      console.log(`🎵 Navigating to: ${url}`);
+
+      // Show loading state
+      this.showNavigationLoading();
+
+      // Fetch the new page content
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      const html = await response.text();
+
+      // Parse the response and extract the main content
+      const parser = new DOMParser();
+      const newDoc = parser.parseFromString(html, "text/html");
+
+      // Update the page content
+      const newMain = newDoc.querySelector("main");
+      const currentMain = document.querySelector("main");
+
+      if (newMain && currentMain) {
+        currentMain.innerHTML = newMain.innerHTML;
+      }
+
+      // Update page title
+      const newTitle = newDoc.querySelector("title");
+      if (newTitle) {
+        document.title = newTitle.textContent;
+      }
+
+      // Update navigation active states
+      this.updateNavigationState(url);
+
+      // Update browser history
+      if (pushState) {
+        history.pushState({ url }, "", url);
+      }
+
+      // Rebind any page-specific functionality
+      this.bindPageSpecificElements();
+
+      // Hide loading state
+      this.hideNavigationLoading();
+
+      console.log(`🎵 Successfully navigated to: ${url}`);
+    } catch (error) {
+      console.error("Navigation failed:", error);
+      this.hideNavigationLoading();
+      // Fallback to traditional navigation
+      window.location.href = url;
+    }
+  }
+
+  updateNavigationState(currentUrl) {
+    // Update active navigation states
+    document.querySelectorAll("nav a").forEach((link) => {
+      const href = new URL(link.href).pathname;
+      const current = new URL(currentUrl, window.location.origin).pathname;
+
+      if (href === current) {
+        link.classList.add("active");
+      } else {
+        link.classList.remove("active");
+      }
+    });
+  }
+
+  showNavigationLoading() {
+    // Add a subtle loading indicator
+    let loader = document.getElementById("nav-loader");
+    if (!loader) {
+      loader = document.createElement("div");
+      loader.id = "nav-loader";
+      loader.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 3px;
+        background: linear-gradient(90deg, transparent, var(--primary-color), transparent);
+        z-index: 9999;
+        animation: loading-slide 1s ease-in-out infinite;
+      `;
+      document.body.appendChild(loader);
+
+      // Add CSS for animation
+      if (!document.getElementById("nav-loader-css")) {
+        const style = document.createElement("style");
+        style.id = "nav-loader-css";
+        style.textContent = `
+          @keyframes loading-slide {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100vw); }
+          }
+        `;
+        document.head.appendChild(style);
+      }
+    }
+    loader.style.display = "block";
+  }
+
+  hideNavigationLoading() {
+    const loader = document.getElementById("nav-loader");
+    if (loader) {
+      loader.style.display = "none";
+    }
+  }
+
+  bindPageSpecificElements() {
+    // Rebind page-specific functionality like the random fact button
+    const newFactBtn = document.getElementById("new-fact-btn");
+    if (newFactBtn) {
+      newFactBtn.addEventListener("click", getRandomFact);
+    }
+
+    // Radio quote functionality for homepage
+    const radioQuote = document.getElementById("radio-quote");
+    if (radioQuote && !radioQuote.dataset.bound) {
+      radioQuote.dataset.bound = "true";
+      updateRadioQuote();
+      setInterval(updateRadioQuote, 60000);
+    }
+  }
+
+  setupAudioPlayer() {
+    if (!this.audioPlayer) {
+      console.error("Audio player element not found");
+      return;
+    }
+
+    // Skip if already setup
+    if (this.audioPlayer.dataset.listenersSetup === "true") {
+      console.log("🎵 Audio listeners already setup, skipping");
+      return;
+    }
+
+    // Set initial audio state
+    this.audioPlayer.volume = this.volumeLevel;
+    this.audioPlayer.muted = this.isMuted;
+    this.audioPlayer.preload = "metadata";
+
+    // Mark as setup
+    this.audioPlayer.dataset.listenersSetup = "true";
+
+    // Audio event listeners
+    this.audioPlayer.addEventListener("loadstart", () => {
       console.log("Audio load started");
-      updateLoadingStatus(LoadingStates.LOADING_STREAM);
+      this.updateLoadingStatus(this.LoadingStates.LOADING_STREAM);
     });
 
-    audioPlayer.addEventListener("loadedmetadata", () => {
+    this.audioPlayer.addEventListener("loadedmetadata", () => {
       console.log("Audio metadata loaded");
-      if (audioPlayer.duration && durationEl) {
-        durationEl.textContent = formatTime(audioPlayer.duration);
+      if (this.audioPlayer.duration && this.durationEl) {
+        this.durationEl.textContent = this.formatTime(
+          this.audioPlayer.duration,
+        );
       }
     });
 
-    audioPlayer.addEventListener("canplay", () => {
+    this.audioPlayer.addEventListener("canplay", () => {
       console.log("Audio can play");
-      updateLoadingStatus(LoadingStates.READY);
+      this.updateLoadingStatus(this.LoadingStates.READY);
       setTimeout(() => {
-        setStreamReady(true);
-      }, 500); // Small delay to show "Ready" message
+        this.setStreamReady(true);
+      }, 500);
     });
 
-    audioPlayer.addEventListener("canplaythrough", () => {
+    this.audioPlayer.addEventListener("canplaythrough", () => {
       console.log("Audio can play through");
-      setStreamReady(true);
+      this.setStreamReady(true);
     });
 
-    audioPlayer.addEventListener("playing", () => {
+    this.audioPlayer.addEventListener("playing", () => {
       console.log("Audio is actually playing");
-      setStreamReady(true);
+      this.setStreamReady(true);
     });
 
-    audioPlayer.addEventListener("play", () => {
-      isPlaying = true;
-      if (playIcon) {
-        playIcon.classList.remove("fa-play");
-        playIcon.classList.add("fa-pause");
+    this.audioPlayer.addEventListener("play", () => {
+      this.isPlaying = true;
+      if (this.playIcon) {
+        this.playIcon.classList.remove("fa-play");
+        this.playIcon.classList.add("fa-pause");
       }
-      startProgressUpdates();
-      updateMediaSessionPlaybackState("playing");
+      this.startProgressUpdates();
+      this.updateMediaSessionPlaybackState("playing");
       console.log("Audio started playing");
     });
 
-    audioPlayer.addEventListener("pause", () => {
-      isPlaying = false;
-      if (playIcon) {
-        playIcon.classList.remove("fa-pause");
-        playIcon.classList.add("fa-play");
+    this.audioPlayer.addEventListener("pause", () => {
+      this.isPlaying = false;
+      if (this.playIcon) {
+        this.playIcon.classList.remove("fa-pause");
+        this.playIcon.classList.add("fa-play");
       }
-      stopProgressUpdates();
-      updateMediaSessionPlaybackState("paused");
+      this.stopProgressUpdates();
+      this.updateMediaSessionPlaybackState("paused");
       console.log("Audio paused");
     });
 
-    audioPlayer.addEventListener("timeupdate", () => {
-      updateProgress();
-      updateMediaSessionPosition();
+    this.audioPlayer.addEventListener("timeupdate", () => {
+      this.updateProgress();
+      this.updateMediaSessionPosition();
     });
 
-    audioPlayer.addEventListener("error", (e) => {
+    this.audioPlayer.addEventListener("error", (e) => {
       console.error("Audio error:", e);
-      isPlaying = false;
-      stopProgressUpdates();
-      updateLoadingStatus(LoadingStates.ERROR);
-      hideLoadingOverlay();
-
-      showNotification(
+      this.isPlaying = false;
+      this.stopProgressUpdates();
+      this.updateLoadingStatus(this.LoadingStates.ERROR);
+      this.hideLoadingOverlay();
+      this.showNotification(
         "Audio playback error. Please try refreshing the page.",
         "error",
       );
     });
 
-    audioPlayer.addEventListener("stalled", () => {
+    this.audioPlayer.addEventListener("stalled", () => {
       console.warn("Audio stream stalled - buffering");
-      updateLoadingStatus(LoadingStates.BUFFERING);
+      this.updateLoadingStatus(this.LoadingStates.BUFFERING);
     });
 
-    audioPlayer.addEventListener("waiting", () => {
+    this.audioPlayer.addEventListener("waiting", () => {
       console.log("Audio waiting for data - buffering");
-      updateLoadingStatus(LoadingStates.BUFFERING);
+      this.updateLoadingStatus(this.LoadingStates.BUFFERING);
     });
 
-    audioPlayer.addEventListener("ended", () => {
+    this.audioPlayer.addEventListener("ended", () => {
       console.log("Audio stream ended");
-      isPlaying = false;
-      stopProgressUpdates();
-      setTimeout(checkForNewEpisode, 2000);
-    });
-
-    audioPlayer.addEventListener("progress", () => {
-      // Update buffering progress if needed
-      if (audioPlayer.buffered.length > 0) {
-        const bufferedEnd = audioPlayer.buffered.end(
-          audioPlayer.buffered.length - 1,
-        );
-        const duration = audioPlayer.duration;
-        if (duration > 0) {
-          const bufferedPercent = (bufferedEnd / duration) * 100;
-          // You could show buffering progress here if desired
-        }
-      }
+      this.isPlaying = false;
+      this.stopProgressUpdates();
+      setTimeout(() => this.checkForNewEpisode(), 2000);
     });
   }
 
-  if (volumeSlider) {
-    volumeSlider.value = volumeLevel * 100;
-  }
+  initializeAudio() {
+    if (!this.audioPlayer) return;
 
-  // Set initial volume icon state
-  if (volumeIcon) {
-    volumeIcon.classList.remove("fa-volume-mute");
-    volumeIcon.classList.add("fa-volume-up");
-  }
+    this.updateLoadingStatus(this.LoadingStates.INITIALIZING);
+    this.showLoadingOverlay();
 
-  // Initialize Media Session API
-  setupMediaSession();
-
-  // Initialize the audio source and sync with server position
-  function initializeAudio() {
-    if (!audioPlayer) return;
-
-    updateLoadingStatus(LoadingStates.INITIALIZING);
-    showLoadingOverlay();
-
-    // Set a timeout to hide loading overlay if it takes too long
-    loadingTimeout = setTimeout(() => {
-      if (!isStreamReady) {
-        console.warn(
-          "Stream loading taking longer than expected, showing skip button",
-        );
-        updateLoadingStatus("Taking longer than usual...");
-        if (skipLoadingBtn) {
-          skipLoadingBtn.style.display = "inline-flex";
-        }
+    // Set loading timeout
+    this.loadingTimeout = setTimeout(() => {
+      if (!this.isStreamReady) {
+        console.warn("Stream loading taking longer than expected");
+        this.updateLoadingStatus("Taking longer than usual...");
       }
     }, 8000);
 
     // Force hide after 20 seconds
     setTimeout(() => {
-      if (!isStreamReady) {
-        console.warn("Force hiding loading overlay after 20 seconds");
-        setStreamReady(true);
-        showNotification("Stream ready (click play if needed)");
+      if (!this.isStreamReady) {
+        console.warn("Force hiding loading overlay");
+        this.setStreamReady(true);
+        this.showNotification("Stream ready (click play if needed)");
       }
     }, 20000);
 
-    updateLoadingStatus(LoadingStates.FETCHING_POSITION);
+    this.updateLoadingStatus(this.LoadingStates.FETCHING_POSITION);
 
-    // Get current server position first
+    // Get server position and initialize stream
     fetch("/stream-position")
       .then((response) => response.json())
       .then((data) => {
         const serverTimePosition = data.time_position || 0;
+        this.updateLoadingStatus(this.LoadingStates.LOADING_STREAM);
 
-        updateLoadingStatus(LoadingStates.LOADING_STREAM);
-
-        // Set the stream URL (browser will handle Range requests automatically)
         const streamUrl = `/stream?t=${Date.now()}`;
 
-        if (audioPlayer.src !== window.location.origin + streamUrl) {
-          console.log("Setting audio source:", streamUrl);
-          console.log("Server is at position:", serverTimePosition, "seconds");
+        console.log("Setting audio source:", streamUrl);
+        console.log("Server position:", serverTimePosition, "seconds");
 
-          audioPlayer.src = streamUrl;
+        this.audioPlayer.src = streamUrl;
 
-          // Wait for metadata to load so we can seek
-          const handleLoadedMetadata = () => {
-            audioPlayer.removeEventListener(
-              "loadedmetadata",
-              handleLoadedMetadata,
+        const handleLoadedMetadata = () => {
+          this.audioPlayer.removeEventListener(
+            "loadedmetadata",
+            handleLoadedMetadata,
+          );
+
+          // Seek to server position
+          if (serverTimePosition > 0 && this.audioPlayer.duration) {
+            const seekPosition = Math.min(
+              serverTimePosition,
+              this.audioPlayer.duration - 1,
             );
-
-            // Seek to server position
-            if (serverTimePosition > 0 && audioPlayer.duration) {
-              const seekPosition = Math.min(
-                serverTimePosition,
-                audioPlayer.duration - 1,
-              );
-              console.log("Seeking to position:", seekPosition, "seconds");
-              audioPlayer.currentTime = seekPosition;
-            }
-
-            // Try autoplay
-            const playPromise = audioPlayer.play();
-            if (playPromise !== undefined) {
-              playPromise
-                .then(() => {
-                  console.log("Autoplay started successfully");
-                  setStreamReady(true);
-                  showNotification("McElroy Radio is now playing!", "success");
-                })
-                .catch((error) => {
-                  console.log("Autoplay prevented by browser:", error.message);
-                  setStreamReady(true); // Still consider it ready even if autoplay failed
-                  showNotification("Click the play button to start listening");
-                });
-            } else {
-              // Fallback if play() doesn't return a promise
-              setStreamReady(true);
-            }
-          };
-
-          if (audioPlayer.readyState >= 1) {
-            handleLoadedMetadata();
-          } else {
-            audioPlayer.addEventListener(
-              "loadedmetadata",
-              handleLoadedMetadata,
-            );
-
-            // Fallback timeout in case metadata never loads
-            setTimeout(() => {
-              if (!isStreamReady) {
-                console.log("Metadata loading timeout, forcing ready state");
-                setStreamReady(true);
-              }
-            }, 10000);
+            console.log("Seeking to position:", seekPosition, "seconds");
+            this.audioPlayer.currentTime = seekPosition;
           }
+
+          // Try autoplay
+          const playPromise = this.audioPlayer.play();
+          if (playPromise !== undefined) {
+            playPromise
+              .then(() => {
+                console.log("Autoplay started successfully");
+                this.setStreamReady(true);
+                this.showNotification(
+                  "McElroy Radio is now playing!",
+                  "success",
+                );
+              })
+              .catch((error) => {
+                console.log("Autoplay prevented:", error.message);
+                this.setStreamReady(true);
+                this.showNotification(
+                  "Click the play button to start listening",
+                );
+              });
+          } else {
+            this.setStreamReady(true);
+          }
+        };
+
+        if (this.audioPlayer.readyState >= 1) {
+          handleLoadedMetadata();
+        } else {
+          this.audioPlayer.addEventListener(
+            "loadedmetadata",
+            handleLoadedMetadata,
+          );
+          setTimeout(() => {
+            if (!this.isStreamReady) {
+              console.log("Metadata timeout, forcing ready");
+              this.setStreamReady(true);
+            }
+          }, 10000);
         }
       })
       .catch((error) => {
         console.error("Failed to get server position:", error);
-        updateLoadingStatus(LoadingStates.ERROR);
-
+        this.updateLoadingStatus(this.LoadingStates.ERROR);
         setTimeout(() => {
-          hideLoadingOverlay();
-          showNotification(
+          this.hideLoadingOverlay();
+          this.showNotification(
             "Failed to connect to stream. Please refresh the page.",
             "error",
           );
@@ -291,821 +557,266 @@ document.addEventListener("DOMContentLoaded", function () {
       });
   }
 
-  function setStreamReady(ready) {
-    isStreamReady = ready;
-    if (ready) {
-      hideLoadingOverlay();
-      setControlsEnabled(true);
-
-      if (loadingTimeout) {
-        clearTimeout(loadingTimeout);
-        loadingTimeout = null;
-      }
-    }
-  }
-
-  // Theme Management System for McElroy Radio
-  // Add this to your existing scripts.js file
-
-  // Theme Management System for McElroy Radio
-  // Add this to your existing scripts.js file
-
-  // Theme Management Class
-  class ThemeManager {
-    constructor() {
-      this.currentTheme = this.getSavedTheme() || this.getSystemTheme();
-      this.konamiCode = [
-        "ArrowUp",
-        "ArrowUp",
-        "ArrowDown",
-        "ArrowDown",
-        "ArrowLeft",
-        "ArrowRight",
-        "ArrowLeft",
-        "ArrowRight",
-        "KeyB",
-        "KeyA",
-      ];
-      this.konamiProgress = [];
-      this.hotdogMode = false;
-      this.hotdogInterval = null;
-
-      this.init();
+  setupEventListeners() {
+    // Play/pause button
+    if (this.playBtn) {
+      this.playBtn.addEventListener("click", () => this.togglePlay());
     }
 
-    init() {
-      this.createThemeSelector();
-      this.applyTheme(this.currentTheme);
-      this.setupEventListeners();
-      this.setupKonamiCode();
-      this.updateDisplay();
+    // Rewind button
+    if (this.rewindBtn) {
+      this.rewindBtn.addEventListener("click", () => this.rewind());
     }
 
-    getSavedTheme() {
-      return localStorage.getItem("mcElroyRadioTheme");
-    }
-
-    getSystemTheme() {
-      return window.matchMedia("(prefers-color-scheme: dark)").matches
-        ? "dark"
-        : "light";
-    }
-
-    saveTheme(theme) {
-      localStorage.setItem("mcElroyRadioTheme", theme);
-    }
-
-    applyTheme(theme) {
-      document.documentElement.setAttribute("data-theme", theme);
-      this.currentTheme = theme;
-      this.saveTheme(theme);
-      this.updateDisplay();
-
-      // Special handling for hot dog theme
-      if (theme === "hotdog") {
-        this.activateHotdogMode();
-      } else {
-        this.deactivateHotdogMode();
-      }
-
-      // Dispatch theme change event for other components
-      window.dispatchEvent(
-        new CustomEvent("themeChanged", { detail: { theme } }),
+    // Volume button
+    if (this.volumeBtn) {
+      this.volumeBtn.addEventListener("click", () =>
+        this.toggleVolumeDisplay(),
       );
+      this.volumeBtn.addEventListener("dblclick", () => this.toggleMute());
     }
 
-    updateDisplay() {
-      const themeDisplay = document.getElementById("theme-display");
-      const currentThemeSpan = document.getElementById("current-theme");
-      const themeName = this.getThemeName(this.currentTheme);
-
-      if (themeDisplay) themeDisplay.textContent = themeName;
-      if (currentThemeSpan) currentThemeSpan.textContent = themeName;
-
-      // Update active state in dropdown
-      document.querySelectorAll(".theme-option").forEach((option) => {
-        option.classList.toggle(
-          "active",
-          option.dataset.theme === this.currentTheme,
-        );
-      });
-
-      console.log(
-        `Theme display updated to: ${themeName} (actual theme: ${this.currentTheme})`,
-      );
+    // Volume slider
+    if (this.volumeSlider) {
+      this.volumeSlider.addEventListener("input", () => this.setVolume());
     }
 
-    getThemeName(theme) {
-      const names = {
-        light: "Light",
-        dark: "Dark",
-        synthwave: "Synthwave",
-        forest: "Forest",
-        ocean: "Ocean",
-        hotdog: "🌭 HOT DOG STAND 🌭",
-      };
-      return names[theme] || "Unknown";
+    // Progress bar clicking
+    if (this.progressBar) {
+      this.progressBar.addEventListener("click", (e) => this.seekToPosition(e));
     }
 
-    createThemeSelector() {
-      // Check if theme selector already exists
-      if (document.querySelector(".theme-selector")) return;
-
-      // Find the nav element
-      const nav = document.querySelector("nav");
-      if (!nav) return;
-
-      // Create theme selector HTML
-      const themeSelectorHTML = `
-              <div class="theme-selector">
-                  <button class="theme-button" id="theme-toggle">
-                      <i class="fas fa-palette"></i>
-                      <span id="current-theme">Light</span>
-                  </button>
-                  <div class="theme-dropdown" id="theme-dropdown">
-                      <div class="theme-option" data-theme="light">
-                          <span>Light</span>
-                          <div class="theme-preview">
-                              <div class="theme-preview-color" style="background: #5e60ce;"></div>
-                              <div class="theme-preview-color" style="background: #64dfdf;"></div>
-                              <div class="theme-preview-color" style="background: #ff7c7c;"></div>
-                          </div>
-                      </div>
-                      <div class="theme-option" data-theme="dark">
-                          <span>Dark</span>
-                          <div class="theme-preview">
-                              <div class="theme-preview-color" style="background: #7c3aed;"></div>
-                              <div class="theme-preview-color" style="background: #06b6d4;"></div>
-                              <div class="theme-preview-color" style="background: #f59e0b;"></div>
-                          </div>
-                      </div>
-                      <div class="theme-option" data-theme="synthwave">
-                          <span>Synthwave</span>
-                          <div class="theme-preview">
-                              <div class="theme-preview-color" style="background: #ff0080;"></div>
-                              <div class="theme-preview-color" style="background: #00ffff;"></div>
-                              <div class="theme-preview-color" style="background: #ffff00;"></div>
-                          </div>
-                      </div>
-                      <div class="theme-option" data-theme="forest">
-                          <span>Forest</span>
-                          <div class="theme-preview">
-                              <div class="theme-preview-color" style="background: #16a085;"></div>
-                              <div class="theme-preview-color" style="background: #27ae60;"></div>
-                              <div class="theme-preview-color" style="background: #f39c12;"></div>
-                          </div>
-                      </div>
-                      <div class="theme-option" data-theme="ocean">
-                          <span>Ocean</span>
-                          <div class="theme-preview">
-                              <div class="theme-preview-color" style="background: #3498db;"></div>
-                              <div class="theme-preview-color" style="background: #2980b9;"></div>
-                              <div class="theme-preview-color" style="background: #1abc9c;"></div>
-                          </div>
-                      </div>
-                  </div>
-              </div>
-          `;
-
-      // Insert the theme selector into nav
-      nav.insertAdjacentHTML("beforeend", themeSelectorHTML);
-    }
-
-    setupEventListeners() {
-      // Wait for theme selector to be created
-      setTimeout(() => {
-        const themeToggle = document.getElementById("theme-toggle");
-        const themeDropdown = document.getElementById("theme-dropdown");
-
-        if (themeToggle) {
-          themeToggle.addEventListener("click", (e) => {
-            e.stopPropagation();
-            themeDropdown.classList.toggle("show");
-          });
-        }
-
-        // Close dropdown when clicking outside
-        document.addEventListener("click", () => {
-          if (themeDropdown) {
-            themeDropdown.classList.remove("show");
-          }
-        });
-
-        // Prevent dropdown from closing when clicking inside
-        if (themeDropdown) {
-          themeDropdown.addEventListener("click", (e) => {
-            e.stopPropagation();
-          });
-        }
-
-        // Theme option selection
-        document.querySelectorAll(".theme-option").forEach((option) => {
-          option.addEventListener("click", () => {
-            const theme = option.dataset.theme;
-            this.applyTheme(theme);
-            themeDropdown.classList.remove("show");
-          });
-        });
-
-        // Update display after elements are created
-        this.updateDisplay();
-      }, 100);
-
-      // Listen for system theme changes
-      window
-        .matchMedia("(prefers-color-scheme: dark)")
-        .addEventListener("change", (e) => {
-          if (!this.getSavedTheme()) {
-            const newTheme = e.matches ? "dark" : "light";
-            console.log(`System theme changed to: ${newTheme}`);
-            this.applyTheme(newTheme);
-          }
-        });
-    }
-
-    setupKonamiCode() {
-      document.addEventListener("keydown", (e) => {
-        // Add current key to progress
-        this.konamiProgress.push(e.code);
-
-        // Keep only the last 10 keys
-        if (this.konamiProgress.length > this.konamiCode.length) {
-          this.konamiProgress.shift();
-        }
-
-        // Check if the sequence matches
-        if (this.konamiProgress.length === this.konamiCode.length) {
-          const matches = this.konamiProgress.every(
-            (key, index) => key === this.konamiCode[index],
-          );
-
-          if (matches) {
-            this.triggerHotdogMode();
-            this.konamiProgress = []; // Reset
-          }
-        }
-      });
-    }
-
-    triggerHotdogMode() {
-      // Play a celebratory sound effect (if possible)
-      this.playHotdogSound();
-
-      // Show notification
-      this.showHotdogNotification();
-
-      // Apply the hot dog theme
-      this.applyTheme("hotdog");
-
-      // Add the hotdog option to dropdown if not already there
-      this.addHotdogThemeOption();
-    }
-
-    playHotdogSound() {
-      // Create a simple beep sound using Web Audio API
-      try {
-        const audioContext = new (window.AudioContext ||
-          window.webkitAudioContext)();
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
-
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-
-        oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-        oscillator.frequency.setValueAtTime(
-          1000,
-          audioContext.currentTime + 0.1,
-        );
-        oscillator.frequency.setValueAtTime(
-          1200,
-          audioContext.currentTime + 0.2,
-        );
-
-        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(
-          0.01,
-          audioContext.currentTime + 0.3,
-        );
-
-        oscillator.start(audioContext.currentTime);
-        oscillator.stop(audioContext.currentTime + 0.3);
-      } catch (e) {
-        console.log("Audio not available, but hot dog mode activated!");
-      }
-    }
-
-    showHotdogNotification() {
-      const notification = document.createElement("div");
-      notification.innerHTML = `
-              <div style="
-                  position: fixed;
-                  top: 50%;
-                  left: 50%;
-                  transform: translate(-50%, -50%);
-                  background: linear-gradient(45deg, #ff0000, #ffff00, #ff0000);
-                  color: #000;
-                  padding: 30px;
-                  border-radius: 15px;
-                  box-shadow: 0 0 30px rgba(255, 0, 0, 0.8);
-                  z-index: 10000;
-                  text-align: center;
-                  font-size: 2rem;
-                  font-weight: bold;
-                  border: 5px solid #ff0000;
-                  animation: hotdog-entrance 2s ease-out;
-              ">
-                  🌭 HOT DOG STAND MODE ACTIVATED! 🌭<br>
-                  <div style="font-size: 1rem; margin-top: 10px;">
-                      Welcome to the most beautiful theme ever created!
-                  </div>
-              </div>
-          `;
-
-      document.body.appendChild(notification);
-
-      // Remove notification after 3 seconds
-      setTimeout(() => {
-        if (notification.parentNode) {
-          notification.parentNode.removeChild(notification);
-        }
-      }, 3000);
-
-      // Add entrance animation
-      const style = document.createElement("style");
-      style.textContent = `
-              @keyframes hotdog-entrance {
-                  0% {
-                      transform: translate(-50%, -50%) scale(0) rotate(720deg);
-                      opacity: 0;
-                  }
-                  50% {
-                      transform: translate(-50%, -50%) scale(1.2) rotate(360deg);
-                  }
-                  100% {
-                      transform: translate(-50%, -50%) scale(1) rotate(0deg);
-                      opacity: 1;
-                  }
-              }
-          `;
-      document.head.appendChild(style);
-    }
-
-    addHotdogThemeOption() {
-      const themeDropdown = document.getElementById("theme-dropdown");
+    // Close volume slider when clicking outside
+    document.addEventListener("click", (event) => {
       if (
-        themeDropdown &&
-        !themeDropdown.querySelector('[data-theme="hotdog"]')
+        this.volumeBtn &&
+        this.volumeContainer &&
+        !this.volumeBtn.contains(event.target) &&
+        !this.volumeContainer.contains(event.target)
       ) {
-        const hotdogOption = document.createElement("div");
-        hotdogOption.className = "theme-option";
-        hotdogOption.dataset.theme = "hotdog";
-        hotdogOption.innerHTML = `
-                  <span>🌭 Hot Dog Stand</span>
-                  <div class="theme-preview">
-                      <div class="theme-preview-color" style="background: #ff0000;"></div>
-                      <div class="theme-preview-color" style="background: #ffff00;"></div>
-                      <div class="theme-preview-color" style="background: #ff8000;"></div>
-                  </div>
-              `;
-
-        hotdogOption.addEventListener("click", () => {
-          this.applyTheme("hotdog");
-          themeDropdown.classList.remove("show");
-        });
-
-        themeDropdown.appendChild(hotdogOption);
-      }
-    }
-
-    activateHotdogMode() {
-      if (this.hotdogMode) return;
-
-      this.hotdogMode = true;
-
-      // Start floating hot dogs
-      this.startFloatingHotdogs();
-
-      // Add screen shake
-      this.addScreenShake();
-
-      // Make everything more chaotic
-      this.addChaosEffects();
-
-      // Show special notification for existing users
-      if (document.querySelector(".episode-title")) {
-        this.showNotification("🌭 MAXIMUM HOTDOG POWER ACHIEVED! 🌭", "hotdog");
-      }
-    }
-
-    deactivateHotdogMode() {
-      if (!this.hotdogMode) return;
-
-      this.hotdogMode = false;
-
-      // Stop floating hot dogs
-      if (this.hotdogInterval) {
-        clearInterval(this.hotdogInterval);
-        this.hotdogInterval = null;
-      }
-
-      // Remove floating hot dogs
-      document.querySelectorAll(".floating-hotdog").forEach((hotdog) => {
-        hotdog.remove();
-      });
-
-      // Remove chaos effects
-      this.removeChaosEffects();
-    }
-
-    startFloatingHotdogs() {
-      this.hotdogInterval = setInterval(() => {
-        this.createFloatingHotdog();
-      }, 500);
-    }
-
-    createFloatingHotdog() {
-      const hotdog = document.createElement("div");
-      hotdog.className = "floating-hotdog";
-      hotdog.textContent = ["🌭", "🌮", "🍕", "🍔", "🌯", "🥪", "🥙"][
-        Math.floor(Math.random() * 7)
-      ];
-
-      // Random vertical position
-      hotdog.style.top = Math.random() * window.innerHeight + "px";
-
-      document.body.appendChild(hotdog);
-
-      // Remove after animation completes
-      setTimeout(() => {
-        if (hotdog.parentNode) {
-          hotdog.parentNode.removeChild(hotdog);
-        }
-      }, 3000);
-    }
-
-    addScreenShake() {
-      const style = document.createElement("style");
-      style.id = "hotdog-shake";
-      style.textContent = `
-              @keyframes screen-shake {
-                  0%, 100% { transform: translateX(0); }
-                  10% { transform: translateX(-2px); }
-                  20% { transform: translateX(2px); }
-                  30% { transform: translateX(-2px); }
-                  40% { transform: translateX(2px); }
-                  50% { transform: translateX(-2px); }
-                  60% { transform: translateX(2px); }
-                  70% { transform: translateX(-2px); }
-                  80% { transform: translateX(2px); }
-                  90% { transform: translateX(-2px); }
-              }
-
-              [data-theme="hotdog"] body {
-                  animation: screen-shake 0.1s infinite;
-              }
-          `;
-      document.head.appendChild(style);
-    }
-
-    addChaosEffects() {
-      // Make buttons randomly change size
-      const buttons = document.querySelectorAll(".btn, .control-btn");
-      buttons.forEach((btn) => {
-        btn.addEventListener("mouseenter", this.randomButtonEffect);
-      });
-
-      // Add random text effects
-      this.addRandomTextEffects();
-
-      // Make the radio waves go crazy
-      this.enhanceRadioWaves();
-    }
-
-    randomButtonEffect(e) {
-      const randomScale = 0.8 + Math.random() * 0.6; // 0.8 to 1.4
-      const randomRotation = (Math.random() - 0.5) * 30; // -15 to 15 degrees
-
-      e.target.style.transform = `scale(${randomScale}) rotate(${randomRotation}deg)`;
-
-      setTimeout(() => {
-        e.target.style.transform = "";
-      }, 200);
-    }
-
-    addRandomTextEffects() {
-      const textElements = document.querySelectorAll(
-        "h1, h2, h3, .episode-title",
-      );
-      textElements.forEach((el) => {
-        el.addEventListener("click", () => {
-          const originalText = el.textContent;
-          const funnyTexts = [
-            "🌭 HOT DOG! 🌭",
-            "EMBRACE THE CHAOS!",
-            "BEAUTIFUL, ISN'T IT?",
-            "MORE MUSTARD!",
-            "RELISH THE MOMENT!",
-            "KETCHUP WITH THE TIMES!",
-            "GRIFFIN APPROVED!",
-            "JUSTIN'S FAVORITE!",
-            "TRAVIS SAYS YES!",
-            "MAXIMUM GOOF ACHIEVED!",
-          ];
-
-          el.textContent =
-            funnyTexts[Math.floor(Math.random() * funnyTexts.length)];
-          el.style.transform = "rotate(" + (Math.random() * 20 - 10) + "deg)";
-
-          setTimeout(() => {
-            el.textContent = originalText;
-            el.style.transform = "";
-          }, 1000);
-        });
-      });
-    }
-
-    enhanceRadioWaves() {
-      const waves = document.querySelectorAll(".wave");
-      waves.forEach((wave, index) => {
-        wave.style.animation = `wave-animation 0.5s infinite, hotdog-rainbow 1s infinite linear`;
-        wave.style.borderWidth = "5px";
-      });
-    }
-
-    removeChaosEffects() {
-      // Remove shake style
-      const shakeStyle = document.getElementById("hotdog-shake");
-      if (shakeStyle) {
-        shakeStyle.remove();
-      }
-
-      // Remove button effects
-      const buttons = document.querySelectorAll(".btn, .control-btn");
-      buttons.forEach((btn) => {
-        btn.removeEventListener("mouseenter", this.randomButtonEffect);
-        btn.style.transform = "";
-      });
-
-      // Reset text elements
-      const textElements = document.querySelectorAll(
-        "h1, h2, h3, .episode-title",
-      );
-      textElements.forEach((el) => {
-        el.style.transform = "";
-      });
-
-      // Reset radio waves
-      const waves = document.querySelectorAll(".wave");
-      waves.forEach((wave) => {
-        wave.style.animation = "";
-        wave.style.borderWidth = "";
-      });
-    }
-
-    // Notification system that works with existing notification system
-    showNotification(message, type = "info") {
-      // Try to use existing notification system first
-      if (
-        window.showNotification &&
-        typeof window.showNotification === "function"
-      ) {
-        window.showNotification(message, type);
-        return;
-      }
-
-      // Fallback notification system
-      let notification = document.getElementById("theme-notification");
-      if (!notification) {
-        notification = document.createElement("div");
-        notification.id = "theme-notification";
-        document.body.appendChild(notification);
-      }
-
-      const bgColor =
-        type === "hotdog"
-          ? "linear-gradient(45deg, #ff0000, #ffff00, #ff0000)"
-          : type === "error"
-            ? "rgba(220, 53, 69, 0.9)"
-            : type === "success"
-              ? "rgba(40, 167, 69, 0.9)"
-              : "rgba(94, 96, 206, 0.9)";
-
-      notification.style.cssText = `
-              position: fixed;
-              top: 20px;
-              right: 20px;
-              padding: 12px 20px;
-              background: ${bgColor};
-              color: ${type === "hotdog" ? "#000" : "white"};
-              border-radius: 8px;
-              z-index: 1001;
-              box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-              font-family: inherit;
-              font-size: 14px;
-              font-weight: ${type === "hotdog" ? "bold" : "normal"};
-              max-width: 350px;
-              line-height: 1.4;
-              transform: translateX(100%);
-              transition: transform 0.3s ease;
-              ${type === "hotdog" ? "animation: hotdog-pulse 0.5s infinite alternate;" : ""}
-          `;
-
-      notification.textContent = message;
-      notification.style.display = "block";
-
-      // Animate in
-      setTimeout(() => {
-        notification.style.transform = "translateX(0)";
-      }, 100);
-
-      // Hide after 5 seconds
-      setTimeout(() => {
-        notification.style.transform = "translateX(100%)";
-        setTimeout(() => {
-          notification.style.display = "none";
-        }, 300);
-      }, 5000);
-    }
-  }
-
-  // Easter egg hint system
-  let hintShown = false;
-  let konamiHintTimeout = null;
-
-  function showKonamiHint() {
-    if (hintShown) return;
-
-    const hint = document.createElement("div");
-    hint.style.cssText = `
-          position: fixed;
-          bottom: 20px;
-          right: 20px;
-          background: var(--surface-color);
-          color: var(--text-color);
-          padding: 15px;
-          border-radius: 8px;
-          box-shadow: var(--shadow);
-          border: 1px solid var(--border-color);
-          z-index: 1000;
-          max-width: 300px;
-          font-size: 0.9rem;
-          animation: slide-in 0.3s ease;
-      `;
-    hint.innerHTML = `
-          <strong>🎮 Konami Code Detected!</strong><br>
-          Keep going: ↑↑↓↓←→←→BA<br>
-          <small>Something special awaits...</small>
-      `;
-
-    document.body.appendChild(hint);
-
-    setTimeout(() => {
-      hint.style.animation = "slide-out 0.3s ease";
-      setTimeout(() => hint.remove(), 300);
-    }, 3000);
-
-    // Add slide animations
-    const style = document.createElement("style");
-    style.textContent = `
-          @keyframes slide-in {
-              from { transform: translateX(100%); opacity: 0; }
-              to { transform: translateX(0); opacity: 1; }
-          }
-          @keyframes slide-out {
-              from { transform: translateX(0); opacity: 1; }
-              to { transform: translateX(100%); opacity: 0; }
-          }
-      `;
-    document.head.appendChild(style);
-
-    hintShown = true;
-  }
-
-  // Initialize theme manager and add to existing DOMContentLoaded
-  function initThemeSystem() {
-    console.log("🎨 Initializing theme system...");
-
-    // Initialize theme manager
-    window.themeManager = new ThemeManager();
-
-    // Add konami code hint detection
-    document.addEventListener("keydown", (e) => {
-      if (
-        !hintShown &&
-        (e.code === "ArrowUp" ||
-          e.code === "ArrowDown" ||
-          e.code === "ArrowLeft" ||
-          e.code === "ArrowRight")
-      ) {
-        if (konamiHintTimeout) clearTimeout(konamiHintTimeout);
-        konamiHintTimeout = setTimeout(showKonamiHint, 1000);
+        this.volumeContainer.classList.remove("show");
       }
     });
 
-    // Debug info
-    const savedTheme = localStorage.getItem("mcElroyRadioTheme");
-    const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
-      .matches
-      ? "dark"
-      : "light";
-    const actualTheme = window.themeManager.currentTheme;
+    // Keyboard shortcuts
+    document.addEventListener("keydown", (event) => {
+      if (event.target.matches("input, textarea")) return;
 
-    console.log("Theme system debug:");
-    console.log("- Saved theme:", savedTheme || "none");
-    console.log("- System theme:", systemTheme);
-    console.log("- Applied theme:", actualTheme);
-    console.log("🎨 Theme system initialized! Try the Konami code: ↑↑↓↓←→←→BA");
+      switch (event.code) {
+        case "Space":
+          event.preventDefault();
+          this.togglePlay();
+          break;
+        case "ArrowLeft":
+          event.preventDefault();
+          this.rewind();
+          break;
+        case "ArrowUp":
+          event.preventDefault();
+          if (this.volumeSlider && !this.volumeSlider.disabled) {
+            this.volumeSlider.value = Math.min(
+              100,
+              parseInt(this.volumeSlider.value) + 5,
+            );
+            this.setVolume();
+          }
+          break;
+        case "ArrowDown":
+          event.preventDefault();
+          if (this.volumeSlider && !this.volumeSlider.disabled) {
+            this.volumeSlider.value = Math.max(
+              0,
+              parseInt(this.volumeSlider.value) - 5,
+            );
+            this.setVolume();
+          }
+          break;
+        case "KeyM":
+          event.preventDefault();
+          this.toggleMute();
+          break;
+      }
+    });
+
+    // Handle page visibility changes
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible" && this.isPlaying) {
+        setTimeout(() => this.checkForNewEpisode(), 1000);
+      }
+    });
+
+    // Handle network connectivity changes
+    window.addEventListener("online", () => {
+      console.log("Network connection restored");
+      if (!this.isStreamReady) {
+        this.showNotification(
+          "Connection restored. Reconnecting...",
+          "success",
+        );
+        setTimeout(() => this.initializeAudio(), 1000);
+      }
+    });
+
+    window.addEventListener("offline", () => {
+      console.log("Network connection lost");
+      this.showNotification(
+        "Connection lost. Playback may be interrupted.",
+        "error",
+      );
+    });
   }
 
-  // Export for integration
-  if (typeof module !== "undefined" && module.exports) {
-    module.exports = { ThemeManager, initThemeSystem };
-  } else {
-    window.initThemeSystem = initThemeSystem;
-    window.ThemeManager = ThemeManager;
-  }
-
-  function setControlsEnabled(enabled) {
-    if (playBtn) playBtn.disabled = !enabled;
-    if (rewindBtn) rewindBtn.disabled = !enabled;
-    if (volumeBtn) volumeBtn.disabled = !enabled;
-    if (volumeSlider) volumeSlider.disabled = !enabled;
-  }
-
-  function showLoadingOverlay() {
-    if (loadingOverlay) {
-      loadingOverlay.classList.remove("hidden");
-    }
-  }
-
-  function hideLoadingOverlay() {
-    if (loadingOverlay) {
-      loadingOverlay.classList.add("hidden");
-    }
-  }
-
-  function updateLoadingStatus(status) {
-    if (loadingStatus) {
-      loadingStatus.textContent = status;
-    }
-  }
-
-  // Setup Media Session API for rich media controls
-  function setupMediaSession() {
+  setupMediaSession() {
     if ("mediaSession" in navigator) {
       console.log("Setting up Media Session API");
 
-      // Set up action handlers
-      navigator.mediaSession.setActionHandler("play", () => {
-        togglePlay();
-      });
-
-      navigator.mediaSession.setActionHandler("pause", () => {
-        togglePlay();
-      });
-
+      navigator.mediaSession.setActionHandler("play", () => this.togglePlay());
+      navigator.mediaSession.setActionHandler("pause", () => this.togglePlay());
       navigator.mediaSession.setActionHandler("seekbackward", (details) => {
         const skipTime = details.seekOffset || 15;
-        rewind(skipTime);
+        this.rewind(skipTime);
       });
-
       navigator.mediaSession.setActionHandler("seekforward", (details) => {
         const skipTime = details.seekOffset || 30;
-        if (audioPlayer && audioPlayer.duration) {
-          audioPlayer.currentTime = Math.min(
-            audioPlayer.currentTime + skipTime,
-            audioPlayer.duration,
+        if (this.audioPlayer && this.audioPlayer.duration) {
+          this.audioPlayer.currentTime = Math.min(
+            this.audioPlayer.currentTime + skipTime,
+            this.audioPlayer.duration,
           );
         }
       });
-
       navigator.mediaSession.setActionHandler("seekto", (details) => {
-        if (audioPlayer && details.seekTime !== null) {
-          audioPlayer.currentTime = details.seekTime;
+        if (this.audioPlayer && details.seekTime !== null) {
+          this.audioPlayer.currentTime = details.seekTime;
         }
       });
 
-      // Set initial metadata
-      updateMediaSessionMetadata();
-    } else {
-      console.log("Media Session API not supported");
+      this.updateMediaSessionMetadata();
     }
   }
 
-  function updateMediaSessionMetadata(episodeData = null) {
+  startEpisodeChecking() {
+    // Don't start multiple intervals
+    if (this.episodeCheckInterval) {
+      return;
+    }
+
+    // Initial check
+    this.checkForNewEpisode();
+
+    // Check every 30 seconds
+    this.episodeCheckInterval = setInterval(() => {
+      this.checkForNewEpisode();
+    }, 30000);
+  }
+
+  checkForNewEpisode() {
+    fetch("/now-playing")
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.json();
+      })
+      .then((data) => {
+        if (data.id && data.id !== this.currentEpisodeId) {
+          console.log("New episode detected:", data.title);
+          this.currentEpisodeId = data.id;
+
+          this.updateUIWithEpisodeData(data);
+          this.updateMediaSessionMetadata(data);
+
+          // Only update source if needed
+          if (!this.audioPlayer.src.includes("/stream")) {
+            const streamUrl = `/stream?t=${Date.now()}`;
+            this.audioPlayer.src = streamUrl;
+            this.audioPlayer.currentTime = 0;
+
+            if (this.isPlaying) {
+              this.audioPlayer.play().catch(console.error);
+            }
+          }
+        } else if (data.id === this.currentEpisodeId) {
+          // Same episode - sync position if significantly off
+          const serverTime = data.time_position || 0;
+          const clientTime = this.audioPlayer.currentTime || 0;
+          const timeDiff = Math.abs(serverTime - clientTime);
+
+          if (
+            timeDiff > 10 &&
+            this.audioPlayer.duration &&
+            serverTime < this.audioPlayer.duration
+          ) {
+            console.log(
+              `Resyncing: server=${serverTime}s, client=${clientTime}s, diff=${timeDiff}s`,
+            );
+            this.audioPlayer.currentTime = serverTime;
+          }
+        }
+
+        this.updateUIWithEpisodeData(data);
+      })
+      .catch((err) => {
+        console.error("Error checking for new episode:", err);
+      });
+  }
+
+  updateUIWithEpisodeData(data) {
+    // Update global player bar
+    if (this.episodeTitle && data.title) {
+      this.episodeTitle.textContent = data.title;
+    }
+
+    if (this.showName && data.show_name) {
+      this.showName.textContent = data.show_name;
+    }
+
+    if (this.episodeCover && data.image_path) {
+      this.episodeCover.src = data.image_path;
+      this.episodeCover.alt = `${data.show_name} Cover Art`;
+    }
+
+    // Update homepage elements if they exist
+    const homeEpisodeTitle = document.getElementById("episode-title");
+    const homeShowName = document.getElementById("show-name");
+    const homeEpisodeCover = document.getElementById("episode-cover-art");
+    const homeRandomFact = document.getElementById("random-fact");
+
+    if (homeEpisodeTitle && data.title) {
+      homeEpisodeTitle.textContent = data.title;
+    }
+
+    if (homeShowName && data.show_name) {
+      homeShowName.textContent = data.show_name;
+    }
+
+    if (homeEpisodeCover && data.image_path) {
+      homeEpisodeCover.src = data.image_path;
+      homeEpisodeCover.alt = `${data.show_name} Cover Art`;
+    }
+
+    if (homeRandomFact && data.random_fact) {
+      homeRandomFact.textContent = data.random_fact;
+    }
+
+    // Update page title
+    if (data.title && data.show_name) {
+      document.title = `${data.title} - ${data.show_name} | McElroy Radio`;
+    }
+  }
+
+  updateMediaSessionMetadata(episodeData = null) {
     if ("mediaSession" in navigator) {
       const title =
-        episodeData?.title || episodeTitle?.textContent || "McElroy Radio";
+        episodeData?.title || this.episodeTitle?.textContent || "McElroy Radio";
       const artist =
-        episodeData?.show_name || showName?.textContent || "McElroy Family";
+        episodeData?.show_name ||
+        this.showName?.textContent ||
+        "McElroy Family";
       const album = "McElroy Radio";
       const artwork =
         episodeData?.image_path ||
-        episodeCover?.src ||
+        this.episodeCover?.src ||
         "/static/img/default-cover.png";
 
-      // Convert relative URLs to absolute URLs
       const absoluteArtwork = artwork.startsWith("http")
         ? artwork
         : window.location.origin + artwork;
@@ -1123,144 +834,242 @@ document.addEventListener("DOMContentLoaded", function () {
           { src: absoluteArtwork, sizes: "512x512", type: "image/png" },
         ],
       });
-
-      console.log("Updated media session metadata:", {
-        title,
-        artist,
-        album,
-        artwork: absoluteArtwork,
-      });
     }
   }
 
-  function updateMediaSessionPlaybackState(state) {
+  updateMediaSessionPlaybackState(state) {
     if ("mediaSession" in navigator) {
       navigator.mediaSession.playbackState = state;
     }
   }
 
-  function updateMediaSessionPosition() {
-    if ("mediaSession" in navigator && audioPlayer) {
+  updateMediaSessionPosition() {
+    if ("mediaSession" in navigator && this.audioPlayer) {
       navigator.mediaSession.setPositionState({
-        duration: audioPlayer.duration || 0,
-        playbackRate: audioPlayer.playbackRate || 1,
-        position: audioPlayer.currentTime || 0,
+        duration: this.audioPlayer.duration || 0,
+        playbackRate: this.audioPlayer.playbackRate || 1,
+        position: this.audioPlayer.currentTime || 0,
       });
     }
   }
 
-  // Check for new episodes and update source if needed
-  function checkForNewEpisode() {
-    fetch("/now-playing")
-      .then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
-      })
-      .then((data) => {
-        if (data.id && data.id !== currentEpisodeId) {
-          console.log("New episode detected:", data.title);
-          currentEpisodeId = data.id;
+  // Control methods
+  togglePlay() {
+    if (!this.audioPlayer || !this.isStreamReady) return;
 
-          // Update UI elements
-          updateUIWithEpisodeData(data);
+    if (this.isPlaying) {
+      this.audioPlayer.pause();
+      console.log("Paused");
+    } else {
+      if (this.isMuted) {
+        this.showNotification("Click the volume button to unmute audio");
+      }
 
-          // Update media session metadata
-          updateMediaSessionMetadata(data);
+      if (!this.audioPlayer.src || this.audioPlayer.readyState === 0) {
+        this.initializeAudio();
+        return;
+      }
 
-          // Update the audio source for the new episode
-          const streamUrl = `/stream?t=${Date.now()}`;
-          audioPlayer.src = streamUrl;
-          audioPlayer.currentTime = 0;
-
-          if (isPlaying) {
-            audioPlayer.play().catch(console.error);
-          }
-        } else if (data.id === currentEpisodeId) {
-          // Same episode - sync position if we're significantly off
-          const serverTime = data.time_position || 0;
-          const clientTime = audioPlayer.currentTime || 0;
-          const timeDiff = Math.abs(serverTime - clientTime);
-
-          if (
-            timeDiff > 10 &&
-            audioPlayer.duration &&
-            serverTime < audioPlayer.duration
-          ) {
-            console.log(
-              `Resyncing position: server=${serverTime}s, client=${clientTime}s, diff=${timeDiff}s`,
+      const playPromise = this.audioPlayer.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            console.log("Playing");
+          })
+          .catch((error) => {
+            console.error("Play failed:", error);
+            this.showNotification(
+              "Playback failed. Please try refreshing the page.",
+              "error",
             );
-            audioPlayer.currentTime = serverTime;
-          }
+          });
+      }
+    }
+  }
+
+  rewind(seconds = 15) {
+    if (this.audioPlayer && this.audioPlayer.currentTime > seconds) {
+      this.audioPlayer.currentTime = Math.max(
+        0,
+        this.audioPlayer.currentTime - seconds,
+      );
+      console.log(`Rewound ${seconds} seconds`);
+    }
+  }
+
+  toggleVolumeDisplay() {
+    if (!this.volumeContainer) return;
+
+    if (this.volumeContainer.classList.contains("show")) {
+      this.volumeContainer.classList.remove("show");
+    } else {
+      this.volumeContainer.classList.add("show");
+    }
+  }
+
+  toggleMute() {
+    if (!this.audioPlayer) return;
+
+    if (this.isMuted) {
+      this.audioPlayer.volume = this.lastVolumeLevel;
+      this.audioPlayer.muted = false;
+      if (this.volumeIcon) {
+        this.volumeIcon.classList.remove("fa-volume-mute");
+        this.volumeIcon.classList.add("fa-volume-up");
+      }
+      if (this.volumeSlider) {
+        this.volumeSlider.value = this.lastVolumeLevel * 100;
+      }
+      console.log("Unmuted");
+    } else {
+      this.lastVolumeLevel = this.audioPlayer.volume;
+      this.audioPlayer.volume = 0;
+      this.audioPlayer.muted = true;
+      if (this.volumeIcon) {
+        this.volumeIcon.classList.remove("fa-volume-up");
+        this.volumeIcon.classList.add("fa-volume-mute");
+      }
+      if (this.volumeSlider) {
+        this.volumeSlider.value = 0;
+      }
+      console.log("Muted");
+    }
+    this.isMuted = !this.isMuted;
+  }
+
+  setVolume() {
+    if (!this.audioPlayer || !this.volumeSlider) return;
+
+    const newVolume = this.volumeSlider.value / 100;
+    this.audioPlayer.volume = newVolume;
+    this.volumeLevel = newVolume;
+
+    if (newVolume === 0) {
+      if (!this.isMuted) {
+        this.isMuted = true;
+        if (this.volumeIcon) {
+          this.volumeIcon.classList.remove("fa-volume-up");
+          this.volumeIcon.classList.add("fa-volume-mute");
         }
-
-        updateUIWithEpisodeData(data);
-      })
-      .catch((err) => {
-        console.error("Error checking for new episode:", err);
-      });
-  }
-
-  // Update UI with episode data
-  function updateUIWithEpisodeData(data) {
-    if (episodeTitle && data.title) {
-      episodeTitle.textContent = data.title;
-    }
-
-    if (showName && data.show_name) {
-      showName.textContent = data.show_name;
-    }
-
-    if (episodeCover && data.image_path) {
-      episodeCover.src = data.image_path;
-      episodeCover.alt = `${data.show_name} Cover Art`;
-    }
-
-    if (randomFactEl && data.random_fact) {
-      randomFactEl.textContent = data.random_fact;
-    }
-
-    // Update page title
-    if (data.title && data.show_name) {
-      document.title = `${data.title} - ${data.show_name} | McElroy Radio`;
+        this.audioPlayer.muted = true;
+      }
+    } else {
+      if (this.isMuted) {
+        this.isMuted = false;
+        if (this.volumeIcon) {
+          this.volumeIcon.classList.remove("fa-volume-mute");
+          this.volumeIcon.classList.add("fa-volume-up");
+        }
+        this.audioPlayer.muted = false;
+      }
     }
   }
 
-  // Update progress bar and time display
-  function updateProgress() {
-    if (!audioPlayer || !currentTimeEl) return;
+  seekToPosition(event) {
+    if (!this.audioPlayer || !this.audioPlayer.duration) return;
 
-    const currentTime = audioPlayer.currentTime;
-    const duration = audioPlayer.duration;
+    const rect = this.progressBar.getBoundingClientRect();
+    const clickX = event.clientX - rect.left;
+    const width = rect.width;
+    const percentage = clickX / width;
+    const newTime = percentage * this.audioPlayer.duration;
 
-    if (currentTimeEl) {
-      currentTimeEl.textContent = formatTime(currentTime);
+    this.audioPlayer.currentTime = Math.max(
+      0,
+      Math.min(newTime, this.audioPlayer.duration),
+    );
+  }
+
+  // Utility methods
+  updateProgress() {
+    if (!this.audioPlayer || !this.currentTimeEl) return;
+
+    const currentTime = this.audioPlayer.currentTime;
+    const duration = this.audioPlayer.duration;
+
+    if (this.currentTimeEl) {
+      this.currentTimeEl.textContent = this.formatTime(currentTime);
     }
 
-    if (duration && progressBar && !isNaN(duration)) {
+    if (duration && this.progress && !isNaN(duration)) {
       const progressPercent = (currentTime / duration) * 100;
-      progressBar.style.width = `${Math.min(progressPercent, 100)}%`;
+      this.progress.style.width = `${Math.min(progressPercent, 100)}%`;
     }
   }
 
-  function startProgressUpdates() {
-    if (progressUpdateInterval) return;
-    progressUpdateInterval = setInterval(() => {
-      updateProgress();
+  startProgressUpdates() {
+    if (this.progressUpdateInterval) return;
+    this.progressUpdateInterval = setInterval(() => {
+      this.updateProgress();
     }, 1000);
   }
 
-  function stopProgressUpdates() {
-    if (progressUpdateInterval) {
-      clearInterval(progressUpdateInterval);
-      progressUpdateInterval = null;
+  stopProgressUpdates() {
+    if (this.progressUpdateInterval) {
+      clearInterval(this.progressUpdateInterval);
+      this.progressUpdateInterval = null;
     }
   }
 
-  function showNotification(message, type = "info") {
-    let notification = document.getElementById("stream-notification");
+  formatTime(seconds) {
+    if (isNaN(seconds) || !isFinite(seconds) || seconds < 0) {
+      return "00:00";
+    }
+
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
+    } else {
+      return `${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
+    }
+  }
+
+  setControlsEnabled(enabled) {
+    if (this.playBtn) this.playBtn.disabled = !enabled;
+    if (this.rewindBtn) this.rewindBtn.disabled = !enabled;
+    if (this.volumeBtn) this.volumeBtn.disabled = !enabled;
+    if (this.volumeSlider) this.volumeSlider.disabled = !enabled;
+  }
+
+  showLoadingOverlay() {
+    if (this.loadingOverlay) {
+      this.loadingOverlay.classList.remove("hidden");
+    }
+  }
+
+  hideLoadingOverlay() {
+    if (this.loadingOverlay) {
+      this.loadingOverlay.classList.add("hidden");
+    }
+  }
+
+  updateLoadingStatus(status) {
+    if (this.loadingStatus) {
+      this.loadingStatus.textContent = status;
+    }
+  }
+
+  setStreamReady(ready) {
+    this.isStreamReady = ready;
+    if (ready) {
+      this.hideLoadingOverlay();
+      this.setControlsEnabled(true);
+
+      if (this.loadingTimeout) {
+        clearTimeout(this.loadingTimeout);
+        this.loadingTimeout = null;
+      }
+    }
+  }
+
+  showNotification(message, type = "info") {
+    let notification = document.getElementById("global-radio-notification");
     if (!notification) {
       notification = document.createElement("div");
-      notification.id = "stream-notification";
+      notification.id = "global-radio-notification";
       document.body.appendChild(notification);
     }
 
@@ -1306,280 +1115,521 @@ document.addEventListener("DOMContentLoaded", function () {
     }, 5000);
   }
 
-  function formatTime(seconds) {
-    if (isNaN(seconds) || !isFinite(seconds) || seconds < 0) {
-      return "00:00";
-    }
+  cleanup() {
+    if (this.episodeCheckInterval) clearInterval(this.episodeCheckInterval);
+    if (this.progressUpdateInterval) clearInterval(this.progressUpdateInterval);
+    if (this.loadingTimeout) clearTimeout(this.loadingTimeout);
+    // Don't remove audio element - it should persist
+  }
+}
 
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const remainingSeconds = Math.floor(seconds % 60);
+// Global instance management
+let globalRadioPlayer = null;
 
-    if (hours > 0) {
-      return `${hours}:${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
-    } else {
-      return `${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
-    }
+function initGlobalRadioPlayer() {
+  console.log("🎵 Initializing Global Radio Player");
+
+  // If we already have a global instance, just rebind UI
+  if (
+    window.globalRadioPlayer &&
+    window.globalRadioPlayer instanceof GlobalRadioPlayer
+  ) {
+    console.log("🎵 Found existing global player, reinitializing UI only");
+    globalRadioPlayer = window.globalRadioPlayer;
+
+    // Just rebind UI elements and sync state - don't recreate everything
+    globalRadioPlayer.bindElements();
+    globalRadioPlayer.setupEventListeners();
+    globalRadioPlayer.syncUIWithAudioState();
+    globalRadioPlayer.setStreamReady(true);
+
+    // Rebind page-specific elements
+    globalRadioPlayer.bindPageSpecificElements();
+    return;
   }
 
-  function togglePlay() {
-    if (!audioPlayer || !isStreamReady) return;
+  // Create new instance only if none exists
+  console.log("🎵 Creating new global player instance");
+  globalRadioPlayer = new GlobalRadioPlayer();
+  globalRadioPlayer.init();
+  window.globalRadioPlayer = globalRadioPlayer;
+}
 
-    if (isPlaying) {
-      audioPlayer.pause();
-      console.log("Paused");
-    } else {
-      if (isMuted) {
-        showNotification("Click the volume button to unmute audio");
+// Legacy page-specific functionality
+function getRandomFact() {
+  const randomFactEl = document.getElementById("random-fact");
+  if (!randomFactEl) return;
+
+  fetch("/random-fact")
+    .then((response) => response.json())
+    .then((data) => {
+      if (data.fact) {
+        randomFactEl.style.opacity = "0";
+        setTimeout(() => {
+          randomFactEl.textContent = data.fact;
+          randomFactEl.style.opacity = "1";
+        }, 150);
       }
+    })
+    .catch((err) => console.error("Error getting random fact:", err));
+}
 
-      if (!audioPlayer.src || audioPlayer.readyState === 0) {
-        initializeAudio();
-        return;
-      }
+function getRandomQuote() {
+  const quotes = [
+    { text: "Unless...", author: "Griffin McElroy" },
+    {
+      text: "I'm your dungeon master, your best friend, and your dungeon daddy, Griffin McElroy.",
+      author: "Griffin McElroy",
+    },
+    {
+      text: "Glass shark, glass shark. He love the fat kid.",
+      author: "Justin McElroy",
+    },
+    { text: "Play with me in this space.", author: "Travis McElroy" },
+    { text: "Hachi machi!", author: "Justin McElroy" },
+    {
+      text: "It's familiar, but not too familiar, but not too not familiar.",
+      author: "Griffin McElroy",
+    },
+    { text: "I think dogs should vote!", author: "Justin McElroy" },
+    { text: "Shrimp! Heaven! Now!", author: "Griffin McElroy" },
+    { text: "It's your birth right!", author: "Travis McElroy" },
+    { text: "Squad goals: touch the Skyrim.", author: "Griffin McElroy" },
+  ];
 
-      const playPromise = audioPlayer.play();
-      if (playPromise !== undefined) {
-        playPromise
-          .then(() => {
-            console.log("Playing");
-          })
-          .catch((error) => {
-            console.error("Play failed:", error);
-            showNotification(
-              "Playback failed. Please try refreshing the page.",
-              "error",
-            );
-          });
-      }
-    }
-  }
+  return quotes[Math.floor(Math.random() * quotes.length)];
+}
 
-  function rewind(seconds = 15) {
-    if (audioPlayer && audioPlayer.currentTime > seconds) {
-      audioPlayer.currentTime = Math.max(0, audioPlayer.currentTime - seconds);
-      console.log(`Rewound ${seconds} seconds`);
-    }
-  }
+function updateRadioQuote() {
+  const radioQuote = document.getElementById("radio-quote");
+  if (!radioQuote) return;
 
-  function toggleVolumeDisplay() {
-    if (!volumeContainer) return;
+  const quote = getRandomQuote();
+  radioQuote.innerHTML = `"${quote.text}"<footer>— ${quote.author}</footer>`;
+}
 
-    if (volumeContainer.style.display === "block") {
-      volumeContainer.style.display = "none";
-    } else {
-      volumeContainer.style.display = "block";
-    }
-  }
-
-  function toggleMute() {
-    if (!audioPlayer) return;
-
-    if (isMuted) {
-      audioPlayer.volume = lastVolumeLevel;
-      audioPlayer.muted = false;
-      if (volumeIcon) {
-        volumeIcon.classList.remove("fa-volume-mute");
-        volumeIcon.classList.add("fa-volume-up");
-      }
-      if (volumeSlider) {
-        volumeSlider.value = lastVolumeLevel * 100;
-      }
-      console.log("Unmuted");
-    } else {
-      lastVolumeLevel = audioPlayer.volume;
-      audioPlayer.volume = 0;
-      audioPlayer.muted = true;
-      if (volumeIcon) {
-        volumeIcon.classList.remove("fa-volume-up");
-        volumeIcon.classList.add("fa-volume-mute");
-      }
-      if (volumeSlider) {
-        volumeSlider.value = 0;
-      }
-      console.log("Muted");
-    }
-    isMuted = !isMuted;
-  }
-
-  function setVolume() {
-    if (!audioPlayer || !volumeSlider) return;
-
-    const newVolume = volumeSlider.value / 100;
-    audioPlayer.volume = newVolume;
-
-    if (newVolume === 0) {
-      if (!isMuted) {
-        isMuted = true;
-        if (volumeIcon) {
-          volumeIcon.classList.remove("fa-volume-up");
-          volumeIcon.classList.add("fa-volume-mute");
-        }
-        audioPlayer.muted = true;
-      }
-    } else {
-      if (isMuted) {
-        isMuted = false;
-        if (volumeIcon) {
-          volumeIcon.classList.remove("fa-volume-mute");
-          volumeIcon.classList.add("fa-volume-up");
-        }
-        audioPlayer.muted = false;
-      }
-    }
-  }
-
-  function getRandomFact() {
-    fetch("/random-fact")
-      .then((response) => response.json())
-      .then((data) => {
-        if (randomFactEl && data.fact) {
-          randomFactEl.style.opacity = "0";
-          setTimeout(() => {
-            randomFactEl.textContent = data.fact;
-            randomFactEl.style.opacity = "1";
-          }, 150);
-        }
-      })
-      .catch((err) => console.error("Error getting random fact:", err));
-  }
-
-  function getRandomQuote() {
-    const quotes = [
-      { text: "Unless...", author: "Griffin McElroy" },
-      {
-        text: "I'm your dungeon master, your best friend, and your dungeon daddy, Griffin McElroy.",
-        author: "Griffin McElroy",
-      },
-      {
-        text: "Glass shark, glass shark. He love the fat kid.",
-        author: "Justin McElroy",
-      },
-      { text: "Play with me in this space.", author: "Travis McElroy" },
-      { text: "Hachi machi!", author: "Justin McElroy" },
-      {
-        text: "It's familiar, but not too familiar, but not too not familiar.",
-        author: "Griffin McElroy",
-      },
-      { text: "I think dogs should vote!", author: "Justin McElroy" },
-      { text: "Shrimp! Heaven! Now!", author: "Griffin McElroy" },
-      { text: "It's your birth right!", author: "Travis McElroy" },
-      { text: "Squad goals: touch the Skyrim.", author: "Griffin McElroy" },
+// Theme Management System
+class ThemeManager {
+  constructor() {
+    this.currentTheme = this.getSavedTheme() || this.getSystemTheme();
+    this.konamiCode = [
+      "ArrowUp",
+      "ArrowUp",
+      "ArrowDown",
+      "ArrowDown",
+      "ArrowLeft",
+      "ArrowRight",
+      "ArrowLeft",
+      "ArrowRight",
+      "KeyB",
+      "KeyA",
     ];
+    this.konamiProgress = [];
+    this.hotdogMode = false;
+    this.hotdogInterval = null;
 
-    return quotes[Math.floor(Math.random() * quotes.length)];
+    this.init();
   }
 
-  function updateRadioQuote() {
-    if (!radioQuote) return;
-
-    const quote = getRandomQuote();
-    radioQuote.innerHTML = `"${quote.text}"<footer>— ${quote.author}</footer>`;
+  init() {
+    this.createThemeSelector();
+    this.applyTheme(this.currentTheme);
+    this.setupEventListeners();
+    this.setupKonamiCode();
+    this.updateDisplay();
   }
 
-  // Event Listeners
-  if (playBtn) playBtn.addEventListener("click", togglePlay);
-  if (rewindBtn) rewindBtn.addEventListener("click", () => rewind());
-  if (volumeBtn) {
-    volumeBtn.addEventListener("click", toggleVolumeDisplay);
-    volumeBtn.addEventListener("dblclick", toggleMute);
+  getSavedTheme() {
+    return localStorage.getItem("mcElroyRadioTheme");
   }
-  if (volumeSlider) volumeSlider.addEventListener("input", setVolume);
-  if (newFactBtn) newFactBtn.addEventListener("click", getRandomFact);
-  if (skipLoadingBtn) {
-    skipLoadingBtn.addEventListener("click", () => {
-      console.log("User clicked skip loading");
-      setStreamReady(true);
-      showNotification("Loading skipped - click play to start");
+
+  getSystemTheme() {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
+  }
+
+  saveTheme(theme) {
+    localStorage.setItem("mcElroyRadioTheme", theme);
+  }
+
+  applyTheme(theme) {
+    document.documentElement.setAttribute("data-theme", theme);
+    this.currentTheme = theme;
+    this.saveTheme(theme);
+    this.updateDisplay();
+
+    if (theme === "hotdog") {
+      this.activateHotdogMode();
+    } else {
+      this.deactivateHotdogMode();
+    }
+
+    window.dispatchEvent(
+      new CustomEvent("themeChanged", { detail: { theme } }),
+    );
+  }
+
+  updateDisplay() {
+    const themeDisplay = document.getElementById("theme-display");
+    const currentThemeSpan = document.getElementById("current-theme");
+    const themeName = this.getThemeName(this.currentTheme);
+
+    if (themeDisplay) themeDisplay.textContent = themeName;
+    if (currentThemeSpan) currentThemeSpan.textContent = themeName;
+
+    document.querySelectorAll(".theme-option").forEach((option) => {
+      option.classList.toggle(
+        "active",
+        option.dataset.theme === this.currentTheme,
+      );
     });
   }
 
-  // Initialize episode checking
-  checkForNewEpisode();
-  const episodeCheckInterval = setInterval(checkForNewEpisode, 30000);
+  getThemeName(theme) {
+    const names = {
+      light: "Light",
+      dark: "Dark",
+      synthwave: "Synthwave",
+      forest: "Forest",
+      ocean: "Ocean",
+      hotdog: "🌭 HOT DOG STAND 🌭",
+    };
+    return names[theme] || "Unknown";
+  }
 
-  // Update the radio quote periodically
-  updateRadioQuote();
-  const quoteInterval = setInterval(updateRadioQuote, 60000);
+  createThemeSelector() {
+    if (document.querySelector(".theme-selector")) return;
 
-  // Initialize the audio after a short delay
-  setTimeout(() => {
-    initializeAudio();
-  }, 1000);
+    const nav = document.querySelector("nav");
+    if (!nav) return;
 
-  // Close volume slider when clicking outside
-  document.addEventListener("click", function (event) {
+    const themeSelectorHTML = `
+      <div class="theme-selector">
+          <button class="theme-button" id="theme-toggle">
+              <i class="fas fa-palette"></i>
+              <span id="current-theme">Light</span>
+          </button>
+          <div class="theme-dropdown" id="theme-dropdown">
+              <div class="theme-option" data-theme="light">
+                  <span>Light</span>
+                  <div class="theme-preview">
+                      <div class="theme-preview-color" style="background: #5e60ce;"></div>
+                      <div class="theme-preview-color" style="background: #64dfdf;"></div>
+                      <div class="theme-preview-color" style="background: #ff7c7c;"></div>
+                  </div>
+              </div>
+              <div class="theme-option" data-theme="dark">
+                  <span>Dark</span>
+                  <div class="theme-preview">
+                      <div class="theme-preview-color" style="background: #7c3aed;"></div>
+                      <div class="theme-preview-color" style="background: #06b6d4;"></div>
+                      <div class="theme-preview-color" style="background: #f59e0b;"></div>
+                  </div>
+              </div>
+              <div class="theme-option" data-theme="synthwave">
+                  <span>Synthwave</span>
+                  <div class="theme-preview">
+                      <div class="theme-preview-color" style="background: #ff0080;"></div>
+                      <div class="theme-preview-color" style="background: #00ffff;"></div>
+                      <div class="theme-preview-color" style="background: #ffff00;"></div>
+                  </div>
+              </div>
+              <div class="theme-option" data-theme="forest">
+                  <span>Forest</span>
+                  <div class="theme-preview">
+                      <div class="theme-preview-color" style="background: #16a085;"></div>
+                      <div class="theme-preview-color" style="background: #27ae60;"></div>
+                      <div class="theme-preview-color" style="background: #f39c12;"></div>
+                  </div>
+              </div>
+              <div class="theme-option" data-theme="ocean">
+                  <span>Ocean</span>
+                  <div class="theme-preview">
+                      <div class="theme-preview-color" style="background: #3498db;"></div>
+                      <div class="theme-preview-color" style="background: #2980b9;"></div>
+                      <div class="theme-preview-color" style="background: #1abc9c;"></div>
+                  </div>
+              </div>
+          </div>
+      </div>
+    `;
+
+    nav.insertAdjacentHTML("beforeend", themeSelectorHTML);
+  }
+
+  setupEventListeners() {
+    setTimeout(() => {
+      const themeToggle = document.getElementById("theme-toggle");
+      const themeDropdown = document.getElementById("theme-dropdown");
+
+      if (themeToggle) {
+        themeToggle.addEventListener("click", (e) => {
+          e.stopPropagation();
+          themeDropdown.classList.toggle("show");
+        });
+      }
+
+      document.addEventListener("click", () => {
+        if (themeDropdown) {
+          themeDropdown.classList.remove("show");
+        }
+      });
+
+      if (themeDropdown) {
+        themeDropdown.addEventListener("click", (e) => {
+          e.stopPropagation();
+        });
+      }
+
+      document.querySelectorAll(".theme-option").forEach((option) => {
+        option.addEventListener("click", () => {
+          const theme = option.dataset.theme;
+          this.applyTheme(theme);
+          themeDropdown.classList.remove("show");
+        });
+      });
+
+      this.updateDisplay();
+    }, 100);
+
+    window
+      .matchMedia("(prefers-color-scheme: dark)")
+      .addEventListener("change", (e) => {
+        if (!this.getSavedTheme()) {
+          const newTheme = e.matches ? "dark" : "light";
+          this.applyTheme(newTheme);
+        }
+      });
+  }
+
+  setupKonamiCode() {
+    document.addEventListener("keydown", (e) => {
+      this.konamiProgress.push(e.code);
+
+      if (this.konamiProgress.length > this.konamiCode.length) {
+        this.konamiProgress.shift();
+      }
+
+      if (this.konamiProgress.length === this.konamiCode.length) {
+        const matches = this.konamiProgress.every(
+          (key, index) => key === this.konamiCode[index],
+        );
+
+        if (matches) {
+          this.triggerHotdogMode();
+          this.konamiProgress = [];
+        }
+      }
+    });
+  }
+
+  triggerHotdogMode() {
+    this.playHotdogSound();
+    this.showHotdogNotification();
+    this.applyTheme("hotdog");
+    this.addHotdogThemeOption();
+  }
+
+  playHotdogSound() {
+    try {
+      const audioContext = new (window.AudioContext ||
+        window.webkitAudioContext)();
+      const oscillator = audioContext.createOscillator();
+      const gainNode = audioContext.createGain();
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+
+      oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+      oscillator.frequency.setValueAtTime(1000, audioContext.currentTime + 0.1);
+      oscillator.frequency.setValueAtTime(1200, audioContext.currentTime + 0.2);
+
+      gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(
+        0.01,
+        audioContext.currentTime + 0.3,
+      );
+
+      oscillator.start(audioContext.currentTime);
+      oscillator.stop(audioContext.currentTime + 0.3);
+    } catch (e) {
+      console.log("Audio not available, but hot dog mode activated!");
+    }
+  }
+
+  showHotdogNotification() {
+    const notification = document.createElement("div");
+    notification.innerHTML = `
+      <div style="
+          position: fixed;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          background: linear-gradient(45deg, #ff0000, #ffff00, #ff0000);
+          color: #000;
+          padding: 30px;
+          border-radius: 15px;
+          box-shadow: 0 0 30px rgba(255, 0, 0, 0.8);
+          z-index: 10000;
+          text-align: center;
+          font-size: 2rem;
+          font-weight: bold;
+          border: 5px solid #ff0000;
+          animation: hotdog-entrance 2s ease-out;
+      ">
+          🌭 HOT DOG STAND MODE ACTIVATED! 🌭<br>
+          <div style="font-size: 1rem; margin-top: 10px;">
+              Welcome to the most beautiful theme ever created!
+          </div>
+      </div>
+    `;
+
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+      if (notification.parentNode) {
+        notification.parentNode.removeChild(notification);
+      }
+    }, 3000);
+
+    const style = document.createElement("style");
+    style.textContent = `
+      @keyframes hotdog-entrance {
+          0% {
+              transform: translate(-50%, -50%) scale(0) rotate(720deg);
+              opacity: 0;
+          }
+          50% {
+              transform: translate(-50%, -50%) scale(1.2) rotate(360deg);
+          }
+          100% {
+              transform: translate(-50%, -50%) scale(1) rotate(0deg);
+              opacity: 1;
+          }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  addHotdogThemeOption() {
+    const themeDropdown = document.getElementById("theme-dropdown");
     if (
-      volumeBtn &&
-      volumeContainer &&
-      !volumeBtn.contains(event.target) &&
-      !volumeContainer.contains(event.target)
+      themeDropdown &&
+      !themeDropdown.querySelector('[data-theme="hotdog"]')
     ) {
-      volumeContainer.style.display = "none";
+      const hotdogOption = document.createElement("div");
+      hotdogOption.className = "theme-option";
+      hotdogOption.dataset.theme = "hotdog";
+      hotdogOption.innerHTML = `
+        <span>🌭 Hot Dog Stand</span>
+        <div class="theme-preview">
+            <div class="theme-preview-color" style="background: #ff0000;"></div>
+            <div class="theme-preview-color" style="background: #ffff00;"></div>
+            <div class="theme-preview-color" style="background: #ff8000;"></div>
+        </div>
+      `;
+
+      hotdogOption.addEventListener("click", () => {
+        this.applyTheme("hotdog");
+        themeDropdown.classList.remove("show");
+      });
+
+      themeDropdown.appendChild(hotdogOption);
     }
-  });
+  }
 
-  // Keyboard shortcuts
-  document.addEventListener("keydown", function (event) {
-    if (event.target.matches("input, textarea")) return;
+  activateHotdogMode() {
+    if (this.hotdogMode) return;
+    this.hotdogMode = true;
+    this.startFloatingHotdogs();
+    this.addScreenShake();
+  }
 
-    switch (event.code) {
-      case "Space":
-        event.preventDefault();
-        togglePlay();
-        break;
-      case "ArrowLeft":
-        event.preventDefault();
-        rewind();
-        break;
-      case "ArrowUp":
-        event.preventDefault();
-        if (volumeSlider && !volumeSlider.disabled) {
-          volumeSlider.value = Math.min(100, parseInt(volumeSlider.value) + 5);
-          setVolume();
-        }
-        break;
-      case "ArrowDown":
-        event.preventDefault();
-        if (volumeSlider && !volumeSlider.disabled) {
-          volumeSlider.value = Math.max(0, parseInt(volumeSlider.value) - 5);
-          setVolume();
-        }
-        break;
-      case "KeyM":
-        event.preventDefault();
-        toggleMute();
-        break;
+  deactivateHotdogMode() {
+    if (!this.hotdogMode) return;
+    this.hotdogMode = false;
+
+    if (this.hotdogInterval) {
+      clearInterval(this.hotdogInterval);
+      this.hotdogInterval = null;
     }
-  });
 
-  // Handle page visibility changes
-  document.addEventListener("visibilitychange", function () {
-    if (document.visibilityState === "visible" && isPlaying) {
-      // Page became visible, check if we need to resync
-      setTimeout(checkForNewEpisode, 1000);
+    document.querySelectorAll(".floating-hotdog").forEach((hotdog) => {
+      hotdog.remove();
+    });
+
+    const shakeStyle = document.getElementById("hotdog-shake");
+    if (shakeStyle) {
+      shakeStyle.remove();
     }
-  });
+  }
 
-  // Cleanup on page unload
-  window.addEventListener("beforeunload", function () {
-    if (episodeCheckInterval) clearInterval(episodeCheckInterval);
-    if (quoteInterval) clearInterval(quoteInterval);
-    if (progressUpdateInterval) clearInterval(progressUpdateInterval);
-    if (loadingTimeout) clearTimeout(loadingTimeout);
-  });
+  startFloatingHotdogs() {
+    this.hotdogInterval = setInterval(() => {
+      this.createFloatingHotdog();
+    }, 500);
+  }
 
-  // Handle network connectivity changes
-  window.addEventListener("online", function () {
-    console.log("Network connection restored");
-    if (!isStreamReady) {
-      showNotification("Connection restored. Reconnecting...", "success");
-      setTimeout(initializeAudio, 1000);
-    }
-  });
+  createFloatingHotdog() {
+    const hotdog = document.createElement("div");
+    hotdog.className = "floating-hotdog";
+    hotdog.textContent = ["🌭", "🌮", "🍕", "🍔", "🌯", "🥪", "🥙"][
+      Math.floor(Math.random() * 7)
+    ];
+    hotdog.style.top = Math.random() * window.innerHeight + "px";
 
-  window.addEventListener("offline", function () {
-    console.log("Network connection lost");
-    showNotification("Connection lost. Playback may be interrupted.", "error");
-  });
-});
+    document.body.appendChild(hotdog);
+
+    setTimeout(() => {
+      if (hotdog.parentNode) {
+        hotdog.parentNode.removeChild(hotdog);
+      }
+    }, 3000);
+  }
+
+  addScreenShake() {
+    const style = document.createElement("style");
+    style.id = "hotdog-shake";
+    style.textContent = `
+      @keyframes screen-shake {
+          0%, 100% { transform: translateX(0); }
+          10% { transform: translateX(-2px); }
+          20% { transform: translateX(2px); }
+          30% { transform: translateX(-2px); }
+          40% { transform: translateX(2px); }
+          50% { transform: translateX(-2px); }
+          60% { transform: translateX(2px); }
+          70% { transform: translateX(-2px); }
+          80% { transform: translateX(2px); }
+          90% { transform: translateX(-2px); }
+      }
+
+      [data-theme="hotdog"] body {
+          animation: screen-shake 0.1s infinite;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+}
+
+// Initialize theme system
+function initThemeSystem() {
+  console.log("🎨 Initializing theme system...");
+  window.themeManager = new ThemeManager();
+}
+
+// Export functions
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    GlobalRadioPlayer,
+    ThemeManager,
+    initGlobalRadioPlayer,
+    initThemeSystem,
+  };
+} else {
+  window.initGlobalRadioPlayer = initGlobalRadioPlayer;
+  window.initThemeSystem = initThemeSystem;
+  window.GlobalRadioPlayer = GlobalRadioPlayer;
+  window.ThemeManager = ThemeManager;
+}

@@ -35,6 +35,106 @@
 
         <main>{{ template "content" . }}</main>
 
+        <!-- Global Fixed Player Bar -->
+        <div class="global-player-bar" id="global-player-bar">
+            <!-- Loading Overlay -->
+            <div id="player-loading-overlay" class="player-loading-overlay">
+                <div class="player-loading-content">
+                    <div class="player-loading-spinner"></div>
+                    <span id="player-loading-status"
+                        >Connecting to stream...</span
+                    >
+                </div>
+            </div>
+
+            <div class="player-content">
+                <!-- Episode Info -->
+                <div class="player-episode-info">
+                    <div class="player-episode-image">
+                        <img
+                            src="/static/img/default-cover.png"
+                            alt="Episode Cover"
+                            id="player-episode-cover"
+                        />
+                    </div>
+                    <div class="player-episode-details">
+                        <h4
+                            class="player-episode-title"
+                            id="player-episode-title"
+                        >
+                            McElroy Radio
+                        </h4>
+                        <p class="player-show-name" id="player-show-name">
+                            Where the goofs never end!
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Controls and Progress (Mobile: stacked, Desktop: inline) -->
+                <div class="player-controls-row">
+                    <!-- Playback Controls -->
+                    <div class="player-controls">
+                        <button
+                            id="player-rewind-btn"
+                            class="control-btn"
+                            title="Rewind 15 seconds"
+                            disabled
+                        >
+                            <i class="fas fa-backward"></i>
+                        </button>
+                        <button
+                            id="player-play-btn"
+                            class="control-btn control-btn-large"
+                            title="Play/Pause"
+                            disabled
+                        >
+                            <i class="fas fa-play"></i>
+                        </button>
+                    </div>
+
+                    <!-- Progress Bar -->
+                    <div class="player-progress">
+                        <div class="progress-bar" id="player-progress-bar">
+                            <div id="player-progress" class="progress"></div>
+                        </div>
+                        <div class="time-display">
+                            <span id="player-current-time">00:00</span> /
+                            <span id="player-duration">--:--</span>
+                        </div>
+                    </div>
+
+                    <!-- Volume Controls -->
+                    <div class="volume-controls">
+                        <button
+                            id="player-volume-btn"
+                            class="control-btn"
+                            title="Volume"
+                            disabled
+                        >
+                            <i class="fas fa-volume-up"></i>
+                        </button>
+                        <div
+                            class="volume-slider-container"
+                            id="player-volume-slider-container"
+                        >
+                            <input
+                                type="range"
+                                min="0"
+                                max="100"
+                                value="80"
+                                class="volume-slider"
+                                id="player-volume-slider"
+                                disabled
+                            />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Hidden audio element for global playback - will be created by JS to persist across navigation -->
+            <!-- Audio element will be injected here by JavaScript -->
+        </div>
+
         <footer>
             <div class="footer-container">
                 <p>
@@ -61,9 +161,14 @@
                     initThemeSystem();
                 }
 
+                // Initialize global radio player
+                if (typeof initGlobalRadioPlayer === "function") {
+                    initGlobalRadioPlayer();
+                }
+
                 // Add a small delay to ensure theme is applied before other initialization
                 setTimeout(() => {
-                    console.log("🎨 McElroy Radio with themes loaded!");
+                    console.log("🎨 McElroy Radio with global player loaded!");
 
                     // Add theme change listener for dynamic updates
                     window.addEventListener("themeChanged", function (e) {
