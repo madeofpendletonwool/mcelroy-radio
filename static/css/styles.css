@@ -943,6 +943,86 @@ nav ul li a:hover {
     background-color: var(--primary-color);
 }
 
+.show-image.mbmbam {
+    background-image: url("/static/images/shows/mbmbam.jpg");
+}
+
+.show-image.adventure-zone {
+    background-image: url("/static/images/shows/adventure-zone.jpg");
+}
+
+.show-image.sawbones {
+    background-image: url("/static/images/shows/sawbones.jpg");
+}
+
+.show-image.wonderful {
+    background-image: url("/static/images/shows/wonderful.jpg");
+}
+
+.show-image.shmanners {
+    background-image: url("/static/images/shows/shmanners.jpg");
+}
+
+.show-image.still-buffering {
+    background-image: url("/static/images/shows/still-buffering.jpg");
+}
+
+.show-image.besties {
+    background-image: url("/static/images/shows/besties.jpg");
+}
+
+.show-image.til-death-do-us-blart {
+    background-image: url("/static/images/shows/til-death-do-us-blart.jpg");
+}
+
+.show-image.trends-like-these {
+    background-image: url("/static/images/shows/trends-like-these.jpg");
+}
+
+.show-image.positivitiny {
+    background-image: url("/static/images/shows/positivitiny.jpg");
+}
+
+.show-image.run-doctor-who {
+    background-image: url("/static/images/shows/run-doctor-who.jpg");
+}
+
+.show-image.bunker-buddies {
+    background-image: url("/static/images/shows/bunker-buddies.jpg");
+}
+
+.show-image.interrobang {
+    background-image: url("/static/images/shows/interrobang.jpg");
+}
+
+.show-image.coolgames-inc {
+    background-image: url("/static/images/shows/coolgames-inc.jpg");
+}
+
+.show-image.quality-control {
+    background-image: url("/static/images/shows/quality-control.jpg");
+}
+
+.show-image.surprisingly-nice {
+    background-image: url("/static/images/shows/surprisingly-nice.jpg");
+}
+
+.show-image.kind-rewind {
+    background-image: url("/static/images/shows/kind-rewind.jpg");
+}
+
+.show-image.can-i-pet-your-dog {
+    background-image: url("/static/images/shows/can-i-pet-your-dog.jpg");
+}
+
+.show-image.empty-bowl {
+    background-image: url("/static/images/shows/empty-bowl.jpg");
+}
+
+.show-image.rose-buddies {
+    background-image: url("/static/images/shows/rose-buddies.jpg");
+}
+
 .show-card h3 {
     font-size: 1rem;
     padding: 12px 15px 8px;

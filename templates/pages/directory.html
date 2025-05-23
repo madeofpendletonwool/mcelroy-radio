@@ -128,23 +128,24 @@
 <style>
     /* Enhanced Directory Styles */
     .directory-header {
-        background-color: white;
-        border-radius: 12px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        background-color: var(--surface-color);
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow);
         padding: 30px;
         margin-bottom: 30px;
         text-align: center;
         position: relative;
+        border: 1px solid var(--border-color);
     }
 
     .directory-header h1 {
-        color: #5e60ce;
+        color: var(--primary-color);
         margin-bottom: 10px;
         font-size: 2.2rem;
     }
 
     .directory-subtitle {
-        color: #666;
+        color: var(--text-muted);
         font-size: 1.1rem;
         margin-bottom: 25px;
     }
@@ -169,17 +170,18 @@
     .search-input {
         width: 100%;
         padding: 12px 45px 12px 15px;
-        border: 2px solid #e0e0e0;
+        border: 2px solid var(--border-color);
         border-radius: 25px;
         font-size: 0.95rem;
         transition: all 0.3s ease;
-        background-color: #f8f9fa;
+        background-color: var(--background-color);
+        color: var(--text-color);
     }
 
     .search-input:focus {
         outline: none;
-        border-color: #5e60ce;
-        background-color: white;
+        border-color: var(--primary-color);
+        background-color: var(--surface-color);
         box-shadow: 0 0 0 3px rgba(94, 96, 206, 0.1);
     }
 
@@ -188,7 +190,7 @@
         right: 15px;
         top: 50%;
         transform: translateY(-50%);
-        color: #999;
+        color: var(--text-muted);
         font-size: 1rem;
     }
 
@@ -202,7 +204,7 @@
         padding: 10px 20px;
         border-radius: 20px;
         font-size: 0.9rem;
-        color: #5e60ce;
+        color: var(--primary-color);
         display: flex;
         align-items: center;
         gap: 15px;
@@ -213,7 +215,7 @@
     .btn-link {
         background: none;
         border: none;
-        color: #5e60ce;
+        color: var(--primary-color);
         cursor: pointer;
         font-size: 0.85rem;
         padding: 0;
@@ -224,25 +226,26 @@
     }
 
     .btn-link:hover {
-        color: #4a4bb7;
+        color: var(--secondary-color);
     }
 
     /* Show Section Enhancements */
     .show-section {
-        background-color: white;
-        border-radius: 12px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        background-color: var(--surface-color);
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow);
         margin-bottom: 30px;
         overflow: hidden;
         transition: all 0.3s ease;
+        border: 1px solid var(--border-color);
     }
 
     .sticky-header {
         position: sticky;
         top: 0;
         z-index: 10;
-        background-color: white;
-        border-bottom: 2px solid #f0f0f0;
+        background-color: var(--surface-color);
+        border-bottom: 2px solid var(--border-color);
     }
 
     .show-header-content {
@@ -261,7 +264,7 @@
     .collapse-toggle {
         background: none;
         border: none;
-        color: #5e60ce;
+        color: var(--primary-color);
         font-size: 1.2rem;
         cursor: pointer;
         padding: 5px;
@@ -288,7 +291,7 @@
     }
 
     .show-header h2 {
-        color: #5e60ce;
+        color: var(--primary-color);
         margin: 0;
         font-size: 1.5rem;
     }
@@ -297,15 +300,16 @@
         display: flex;
         gap: 20px;
         font-size: 0.9rem;
-        color: #666;
+        color: var(--text-muted);
     }
 
     .episode-count,
     .total-duration {
-        background-color: #f9f9f9;
+        background-color: var(--background-color);
         padding: 5px 12px;
         border-radius: 15px;
         font-weight: 600;
+        border: 1px solid var(--border-color);
     }
 
     .episodes-container {
@@ -338,17 +342,17 @@
 
     .episode-card-dir {
         display: flex;
-        background-color: #f9f9f9;
-        border-radius: 12px;
+        background-color: var(--background-color);
+        border-radius: var(--border-radius);
         overflow: hidden;
         height: 140px;
         transition: all 0.3s ease;
-        border: 2px solid transparent;
+        border: 2px solid var(--border-color);
     }
 
     .episode-card-dir:hover {
         transform: translateY(-2px);
-        border-color: #64dfdf;
+        border-color: var(--secondary-color);
         box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
     }
 
@@ -381,7 +385,7 @@
         font-size: 0.95rem;
         margin: 0 0 8px 0;
         line-height: 1.3;
-        color: #333;
+        color: var(--text-color);
         display: -webkit-box;
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
@@ -392,7 +396,7 @@
         display: flex;
         gap: 12px;
         font-size: 0.8rem;
-        color: #666;
+        color: var(--text-muted);
         margin-bottom: 8px;
         flex-wrap: wrap;
     }
@@ -413,7 +417,7 @@
     }
 
     .btn {
-        background-color: #5e60ce;
+        background-color: var(--primary-color);
         color: white;
         border: none;
         padding: 8px 16px;
@@ -428,7 +432,7 @@
     }
 
     .btn:hover {
-        background-color: #4a4bb7;
+        background-color: var(--secondary-color);
         transform: translateY(-2px);
     }
 
@@ -449,10 +453,11 @@
     .no-results {
         text-align: center;
         padding: 60px 20px;
-        color: #666;
-        background-color: white;
-        border-radius: 12px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        color: var(--text-muted);
+        background-color: var(--surface-color);
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow);
+        border: 1px solid var(--border-color);
     }
 
     .no-results i {
@@ -463,7 +468,7 @@
 
     .no-results h3 {
         margin-bottom: 10px;
-        color: #333;
+        color: var(--text-color);
     }
 
     /* Responsive Design */

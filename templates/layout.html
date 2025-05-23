@@ -131,8 +131,11 @@
                 </div>
             </div>
 
-            <!-- Hidden audio element for global playback - will be created by JS to persist across navigation -->
-            <!-- Audio element will be injected here by JavaScript -->
+            <!-- Hidden audio element for global playback -->
+            <audio id="global-audio-stream" preload="auto">
+                <source src="/stream" type="audio/mpeg" />
+                Your browser does not support the audio element.
+            </audio>
         </div>
 
         <footer>
