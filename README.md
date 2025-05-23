@@ -4,6 +4,8 @@
 
 McElroy Radio is a fun personal project that creates an internet radio-style experience for fans of the McElroy family's podcasts. The application continuously plays episodes from a collection of audio files, serving them as a radio stream to listeners.
 
+Check it out now at https://mcelroyradio.com
+
 Key features:
 - 24/7 streaming of podcast episodes
 - Continuous playback regardless of whether users are connected
