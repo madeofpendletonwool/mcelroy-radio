@@ -3,6 +3,7 @@ package server
 import (
 	"log"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -42,6 +43,10 @@ func New(cfg *config.Config) (*http.Server, error) {
 	r.Get("/random-fact", h.RandomFact)
 	r.Get("/directory", h.DirectoryPage)
 	r.Get("/stream-position", h.StreamPosition)
+
+	r.Get("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, filepath.Join(cfg.StaticDir, "img", "favicon.ico"))
+	})
 
 	// Add the missing download route
 	r.Get("/download-episode", h.DownloadEpisode)

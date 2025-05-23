@@ -307,6 +307,9 @@ document.addEventListener("DOMContentLoaded", function () {
   // Theme Management System for McElroy Radio
   // Add this to your existing scripts.js file
 
+  // Theme Management System for McElroy Radio
+  // Add this to your existing scripts.js file
+
   // Theme Management Class
   class ThemeManager {
     constructor() {
@@ -331,11 +334,11 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     init() {
+      this.createThemeSelector();
       this.applyTheme(this.currentTheme);
       this.setupEventListeners();
       this.setupKonamiCode();
       this.updateDisplay();
-      this.createThemeSelector();
     }
 
     getSavedTheme() {
@@ -386,6 +389,10 @@ document.addEventListener("DOMContentLoaded", function () {
           option.dataset.theme === this.currentTheme,
         );
       });
+
+      console.log(
+        `Theme display updated to: ${themeName} (actual theme: ${this.currentTheme})`,
+      );
     }
 
     getThemeName(theme) {
@@ -499,6 +506,9 @@ document.addEventListener("DOMContentLoaded", function () {
             themeDropdown.classList.remove("show");
           });
         });
+
+        // Update display after elements are created
+        this.updateDisplay();
       }, 100);
 
       // Listen for system theme changes
@@ -506,7 +516,9 @@ document.addEventListener("DOMContentLoaded", function () {
         .matchMedia("(prefers-color-scheme: dark)")
         .addEventListener("change", (e) => {
           if (!this.getSavedTheme()) {
-            this.applyTheme(e.matches ? "dark" : "light");
+            const newTheme = e.matches ? "dark" : "light";
+            console.log(`System theme changed to: ${newTheme}`);
+            this.applyTheme(newTheme);
           }
         });
     }
@@ -972,6 +984,8 @@ document.addEventListener("DOMContentLoaded", function () {
 
   // Initialize theme manager and add to existing DOMContentLoaded
   function initThemeSystem() {
+    console.log("🎨 Initializing theme system...");
+
     // Initialize theme manager
     window.themeManager = new ThemeManager();
 
@@ -989,6 +1003,18 @@ document.addEventListener("DOMContentLoaded", function () {
       }
     });
 
+    // Debug info
+    const savedTheme = localStorage.getItem("mcElroyRadioTheme");
+    const systemTheme = window.matchMedia("(prefers-color-scheme: dark)")
+      .matches
+      ? "dark"
+      : "light";
+    const actualTheme = window.themeManager.currentTheme;
+
+    console.log("Theme system debug:");
+    console.log("- Saved theme:", savedTheme || "none");
+    console.log("- System theme:", systemTheme);
+    console.log("- Applied theme:", actualTheme);
     console.log("🎨 Theme system initialized! Try the Konami code: ↑↑↓↓←→←→BA");
   }
 
