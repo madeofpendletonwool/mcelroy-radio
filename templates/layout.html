@@ -9,6 +9,8 @@
             rel="stylesheet"
             href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css"
         />
+        <meta name="theme-color" content="#5e60ce" />
+        <meta name="color-scheme" content="light dark" />
     </head>
     <body>
         <header>
@@ -25,6 +27,7 @@
                         <li><a href="/directory">Directory</a></li>
                         <li><a href="/about">About</a></li>
                     </ul>
+                    <!-- Theme selector will be injected here by JavaScript -->
                 </nav>
             </div>
         </header>
@@ -38,9 +41,55 @@
                     with the McElroy family or their podcasts.
                 </p>
                 <p>&copy; {{ .CurrentYear }} McElroy Radio</p>
+                <p>
+                    <small>
+                        💡 Tip: Try different themes with the palette button
+                        above! There might be a secret theme hidden somewhere...
+                        🤔
+                    </small>
+                </p>
             </div>
         </footer>
 
         <script src="/static/js/scripts.js"></script>
+        <script>
+            // Initialize theme system when DOM is ready
+            document.addEventListener("DOMContentLoaded", function () {
+                // Initialize theme system
+                if (typeof initThemeSystem === "function") {
+                    initThemeSystem();
+                }
+
+                // Add a small delay to ensure theme is applied before other initialization
+                setTimeout(() => {
+                    console.log("🎨 McElroy Radio with themes loaded!");
+
+                    // Add theme change listener for dynamic updates
+                    window.addEventListener("themeChanged", function (e) {
+                        console.log("Theme changed to:", e.detail.theme);
+
+                        // Update meta theme-color based on current theme
+                        const themeColors = {
+                            light: "#5e60ce",
+                            dark: "#7c3aed",
+                            synthwave: "#ff0080",
+                            forest: "#16a085",
+                            ocean: "#3498db",
+                            hotdog: "#ff0000",
+                        };
+
+                        const metaThemeColor = document.querySelector(
+                            'meta[name="theme-color"]',
+                        );
+                        if (metaThemeColor && themeColors[e.detail.theme]) {
+                            metaThemeColor.setAttribute(
+                                "content",
+                                themeColors[e.detail.theme],
+                            );
+                        }
+                    });
+                }, 100);
+            });
+        </script>
     </body>
 </html>

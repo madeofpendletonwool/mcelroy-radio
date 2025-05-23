@@ -8,8 +8,10 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -217,6 +219,11 @@ func (h *Handler) DirectoryPage(w http.ResponseWriter, r *http.Request) {
 
 	var shows []ShowData
 	for showName, episodes := range showsMap {
+		// Sort episodes by date (newest first)
+		sort.Slice(episodes, func(i, j int) bool {
+			return episodes[i].PublishedAt.After(episodes[j].PublishedAt)
+		})
+
 		totalDuration := 0.0
 		for _, ep := range episodes {
 			totalDuration += ep.Duration
@@ -229,6 +236,11 @@ func (h *Handler) DirectoryPage(w http.ResponseWriter, r *http.Request) {
 			TotalDuration: totalDuration,
 		})
 	}
+
+	// Sort shows alphabetically for consistent ordering
+	sort.Slice(shows, func(i, j int) bool {
+		return shows[i].Name < shows[j].Name
+	})
 
 	data := map[string]interface{}{
 		"Title":         "Episode Directory - McElroy Radio",
@@ -274,32 +286,80 @@ func (h *Handler) EpisodeDetails(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) DownloadEpisode(w http.ResponseWriter, r *http.Request) {
 	episodeID := r.URL.Query().Get("id")
 	if episodeID == "" {
+		log.Printf("Download request missing episode ID")
 		http.Error(w, "Episode ID required", http.StatusBadRequest)
 		return
 	}
 
+	// URL decode the episode ID in case it's encoded
+	decodedID, err := url.QueryUnescape(episodeID)
+	if err != nil {
+		log.Printf("Failed to decode episode ID: %v", err)
+		// Try with the original ID if decoding fails
+		decodedID = episodeID
+	}
+
+	log.Printf("Download request for episode ID: %s (decoded: %s)", episodeID, decodedID)
+
 	h.mu.RLock()
-	episode := h.fileStore.GetEpisodeByID(episodeID)
+	episode := h.fileStore.GetEpisodeByID(decodedID)
 	h.mu.RUnlock()
 
 	if episode == nil {
-		http.Error(w, "Episode not found", http.StatusNotFound)
-		return
+		log.Printf("Episode not found for ID: %s", decodedID)
+
+		// Try to find by original ID if decoded version failed
+		if decodedID != episodeID {
+			h.mu.RLock()
+			episode = h.fileStore.GetEpisodeByID(episodeID)
+			h.mu.RUnlock()
+		}
+
+		if episode == nil {
+			// List available episodes for debugging
+			h.mu.RLock()
+			allEpisodes := h.fileStore.GetAllEpisodes()
+			h.mu.RUnlock()
+
+			log.Printf("Available episode IDs:")
+			for i, ep := range allEpisodes {
+				if i < 5 { // Only log first 5 to avoid spam
+					log.Printf("  - %s", ep.ID)
+				}
+			}
+
+			http.Error(w, "Episode not found", http.StatusNotFound)
+			return
+		}
 	}
 
 	// Check if file exists
 	if _, err := os.Stat(episode.AudioPath); os.IsNotExist(err) {
+		log.Printf("Episode file not found on disk: %s", episode.AudioPath)
 		http.Error(w, "Episode file not found", http.StatusNotFound)
 		return
 	}
 
 	// Set headers for download
 	filename := filepath.Base(episode.AudioPath)
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+	// Clean filename for download (remove problematic characters)
+	safeFilename := strings.ReplaceAll(filename, ":", "_")
+	safeFilename = strings.ReplaceAll(safeFilename, "\"", "_")
+
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", safeFilename))
 	w.Header().Set("Content-Type", "audio/mpeg")
+
+	// Get file size for Content-Length header
+	if stat, err := os.Stat(episode.AudioPath); err == nil {
+		w.Header().Set("Content-Length", strconv.FormatInt(stat.Size(), 10))
+	}
+
+	log.Printf("Starting download of: %s (%s)", episode.Title, filename)
 
 	// Serve the file
 	http.ServeFile(w, r, episode.AudioPath)
+
+	log.Printf("Download completed for: %s", filename)
 }
 
 // parseRange parses HTTP Range header

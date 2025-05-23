@@ -1,7 +1,10 @@
 package models
 
 import (
+	"crypto/md5"
 	"fmt"
+	"math/rand"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -37,6 +40,7 @@ type AudioMetadata struct {
 	Date     string
 	Duration float64
 	FileSize int64
+	HasImage bool
 }
 
 // NewEpisodeFromFile creates a new Episode from a file path with metadata parsing
@@ -64,6 +68,9 @@ func NewEpisodeFromFile(path string, showName string) *Episode {
 		finalShowName = metadata.Album
 	}
 
+	// Extract and save album art if available
+	imagePath := extractAlbumArt(path, metadata.HasImage)
+
 	return &Episode{
 		ID:          path, // Using path as ID for now
 		Title:       title,
@@ -72,7 +79,7 @@ func NewEpisodeFromFile(path string, showName string) *Episode {
 		Album:       metadata.Album,
 		Genre:       metadata.Genre,
 		AudioPath:   path,
-		ImagePath:   getImagePathForShow(finalShowName),
+		ImagePath:   imagePath,
 		Duration:    metadata.Duration,
 		FileSize:    metadata.FileSize,
 		PublishedAt: publishedAt,
@@ -84,8 +91,9 @@ func NewEpisodeFromFile(path string, showName string) *Episode {
 func parseAudioMetadata(filePath string) AudioMetadata {
 	metadata := AudioMetadata{}
 
-	// Get format metadata
-	cmd := exec.Command("ffprobe", "-v", "error", "-show_entries", "format_tags:format=duration,size", "-of", "default=noprint_wrappers=1", filePath)
+	// Get format metadata including streams info
+	cmd := exec.Command("ffprobe", "-v", "error", "-show_entries",
+		"format_tags:format=duration,size:stream", "-of", "default=noprint_wrappers=1", filePath)
 	output, err := cmd.Output()
 	if err != nil {
 		fmt.Printf("Error running ffprobe on %s: %v\n", filePath, err)
@@ -116,10 +124,55 @@ func parseAudioMetadata(filePath string) AudioMetadata {
 					metadata.FileSize = size
 				}
 			}
+		} else if strings.Contains(line, "codec_name=") && strings.Contains(line, "jpg") ||
+			strings.Contains(line, "codec_name=") && strings.Contains(line, "png") {
+			// Found an image stream
+			metadata.HasImage = true
 		}
 	}
 
 	return metadata
+}
+
+// extractAlbumArt extracts album art from audio file and saves it to static directory
+func extractAlbumArt(audioPath string, hasImage bool) string {
+	if !hasImage {
+		return getDefaultImagePathForShow(audioPath)
+	}
+
+	// Create a unique filename based on the audio file path
+	hash := md5.Sum([]byte(audioPath))
+	imageFilename := fmt.Sprintf("cover_%x.jpg", hash)
+
+	// Ensure the covers directory exists
+	coversDir := filepath.Join("static", "img", "covers")
+	if err := os.MkdirAll(coversDir, 0755); err != nil {
+		fmt.Printf("Error creating covers directory: %v\n", err)
+		return getDefaultImagePathForShow(audioPath)
+	}
+
+	imagePath := filepath.Join(coversDir, imageFilename)
+
+	// Check if image already exists
+	if _, err := os.Stat(imagePath); err == nil {
+		return "/static/img/covers/" + imageFilename
+	}
+
+	// Extract album art using ffmpeg
+	cmd := exec.Command("ffmpeg", "-i", audioPath, "-an", "-vcodec", "copy", imagePath, "-y")
+	if err := cmd.Run(); err != nil {
+		fmt.Printf("Error extracting album art from %s: %v\n", audioPath, err)
+		return getDefaultImagePathForShow(audioPath)
+	}
+
+	// Verify the file was created and has content
+	if info, err := os.Stat(imagePath); err != nil || info.Size() == 0 {
+		// Clean up empty file and fall back to default
+		os.Remove(imagePath)
+		return getDefaultImagePathForShow(audioPath)
+	}
+
+	return "/static/img/covers/" + imageFilename
 }
 
 // parseDateFromMetadata tries to parse a date from metadata or filename
@@ -167,9 +220,10 @@ func parseDateFromMetadata(dateStr, filename string) time.Time {
 	return time.Now()
 }
 
-// getImagePathForShow returns the appropriate image path based on show name
-func getImagePathForShow(showName string) string {
-	showNameLower := strings.ToLower(showName)
+// getDefaultImagePathForShow returns the appropriate default image path based on show name or path
+func getDefaultImagePathForShow(audioPath string) string {
+	// Extract show name from path or use existing logic
+	showNameLower := strings.ToLower(filepath.Base(filepath.Dir(audioPath)))
 
 	if strings.Contains(showNameLower, "brother") || strings.Contains(showNameLower, "mbmbam") {
 		return "/static/img/mbmbam-cover.png"
@@ -182,6 +236,11 @@ func getImagePathForShow(showName string) string {
 	}
 
 	return "/static/img/default-cover.png"
+}
+
+// getImagePathForShow returns the appropriate image path based on show name (legacy function)
+func getImagePathForShow(showName string) string {
+	return getDefaultImagePathForShow(showName)
 }
 
 // Collection of silly facts about the McElroy brothers
@@ -206,10 +265,32 @@ var mcElroyFacts = []string{
 	"Justin can speak backwards, but only when discussing maritime law.",
 	"Travis once built a functioning time machine out of podcast merch.",
 	"The brothers can perform a perfect three-part harmony, but only when no one is recording.",
+	"Griffin McElroy once live-tweeted the birth of his child and it was somehow deeply moving and hilarious.",
+	"Justin McElroy has achieved inner peace through the consumption of limited-edition Pop-Tarts.",
+	"Travis McElroy owns more bow ties than there are grains of sand in a reasonably-sized sandbox.",
+	"The McElroy brothers canonically invented the year 2012 in a bonus episode of MBMBaM.",
+	"Griffin's face has been officially declared 'too powerful' for augmented reality filters.",
+	"Justin has legally changed his middle name to 'Meat', but only on Tuesdays.",
+	"Travis communicates exclusively through interpretive dance when not recording podcasts.",
+	"The McElroys once solved world peace in a dream but forgot to write it down.",
+	"Griffin McElroy voiced a character in a video game and now technically lives in the digital realm.",
+	"Justin can sense when someone nearby is watching The Bachelor.",
+	"Travis has been knighted in at least three Renaissance Faires.",
+	"The McElroy brothers have never lost a fight to a Roomba — not even once.",
+	"Griffin once hosted an entire podcast episode inside a Chili's without anyone noticing.",
+	"Justin owns a haunted juicer that only works during eclipses.",
+	"Travis is powered entirely by kindness and kombucha.",
+	"The McElroys are the only people legally allowed to say the phrase 'bone zone' in six different states.",
+	"Griffin's Animal Crossing island has diplomatic immunity.",
+	"Justin's laugh has been sampled in at least two K-pop songs.",
+	"Travis once taught a masterclass on etiquette to a group of raccoons.",
+	"The McElroy brothers can summon a live audience by yelling 'What's up, you cool baby?' three times.",
 }
 
 // GetRandomFact returns a random McElroy fact
 func GetRandomFact() string {
-	// Simple random selection (in a real application, use proper randomization)
-	return mcElroyFacts[time.Now().Unix()%int64(len(mcElroyFacts))]
+	// Use proper randomization
+	source := rand.NewSource(time.Now().UnixNano())
+	rng := rand.New(source)
+	return mcElroyFacts[rng.Intn(len(mcElroyFacts))]
 }

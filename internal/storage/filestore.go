@@ -1,7 +1,8 @@
 package storage
 
 import (
-	"fmt"
+	"log"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,17 +18,25 @@ type FileStore struct {
 	Episodes        []*models.Episode
 	CurrentEpisode  *models.Episode
 	RecentlyPlayed  []*models.Episode
+	PlayedEpisodes  map[string]bool // Track which episodes we've played in this cycle
 	episodesMutex   sync.RWMutex
 	refreshInterval time.Duration
+	rng             *rand.Rand
 }
 
 // NewFileStore creates a new file store and starts content discovery
 func NewFileStore(contentDirs []string) (*FileStore, error) {
+	// Create a new random source with current time as seed
+	source := rand.NewSource(time.Now().UnixNano())
+	rng := rand.New(source)
+
 	fs := &FileStore{
 		ContentDirs:     contentDirs,
 		Episodes:        make([]*models.Episode, 0),
 		RecentlyPlayed:  make([]*models.Episode, 0),
+		PlayedEpisodes:  make(map[string]bool),
 		refreshInterval: 5 * time.Minute,
+		rng:             rng,
 	}
 
 	// Initial scan
@@ -43,13 +52,18 @@ func NewFileStore(contentDirs []string) (*FileStore, error) {
 
 // ScanContent scans the content directories for audio files
 func (fs *FileStore) ScanContent() error {
+	log.Println("Scanning content directories for audio files...")
+
 	var episodes []*models.Episode
+	episodeCount := 0
 
 	for _, dir := range fs.ContentDirs {
 		showName := filepath.Base(dir)
+		log.Printf("Scanning directory: %s (show: %s)", dir, showName)
 
 		err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
+				log.Printf("Error accessing path %s: %v", path, err)
 				return err
 			}
 
@@ -63,28 +77,70 @@ func (fs *FileStore) ScanContent() error {
 			if ext == ".mp3" || ext == ".m4a" || ext == ".ogg" || ext == ".wav" {
 				episode := models.NewEpisodeFromFile(path, showName)
 				episodes = append(episodes, episode)
+				episodeCount++
+				log.Printf("Found episode: %s", episode.Title)
 			}
 
 			return nil
 		})
 
 		if err != nil {
+			log.Printf("Error scanning directory %s: %v", dir, err)
 			return err
 		}
 	}
 
+	log.Printf("Found %d total episodes across all directories", episodeCount)
+
 	// Update episodes with lock
 	fs.episodesMutex.Lock()
+	defer fs.episodesMutex.Unlock()
+
+	// Check if we found new episodes
+	oldCount := len(fs.Episodes)
+	newEpisodes := fs.findNewEpisodes(episodes)
+
 	fs.Episodes = episodes
 
-	// If we don't have a current episode yet and we found some episodes
+	// If we don't have a current episode yet and we found some episodes, pick one randomly
 	if fs.CurrentEpisode == nil && len(episodes) > 0 {
-		fs.CurrentEpisode = episodes[0] // Start with the first episode
+		randomIndex := fs.rng.Intn(len(episodes))
+		fs.CurrentEpisode = episodes[randomIndex]
 		fs.CurrentEpisode.PlayedAt = time.Now()
+		fs.PlayedEpisodes[fs.CurrentEpisode.ID] = true
+		log.Printf("Selected random starting episode: %s", fs.CurrentEpisode.Title)
 	}
-	fs.episodesMutex.Unlock()
+
+	// Log new episodes found
+	if len(newEpisodes) > 0 {
+		log.Printf("Detected %d new episodes:", len(newEpisodes))
+		for _, ep := range newEpisodes {
+			log.Printf("  - %s", ep.Title)
+		}
+	} else if oldCount > 0 {
+		log.Printf("No new episodes detected (still have %d episodes)", len(episodes))
+	}
 
 	return nil
+}
+
+// findNewEpisodes compares current episodes with new scan results
+func (fs *FileStore) findNewEpisodes(newEpisodes []*models.Episode) []*models.Episode {
+	// Create a map of existing episodes by ID for quick lookup
+	existingEpisodes := make(map[string]bool)
+	for _, ep := range fs.Episodes {
+		existingEpisodes[ep.ID] = true
+	}
+
+	// Find episodes that are in newEpisodes but not in existing
+	var newlyFound []*models.Episode
+	for _, ep := range newEpisodes {
+		if !existingEpisodes[ep.ID] {
+			newlyFound = append(newlyFound, ep)
+		}
+	}
+
+	return newlyFound
 }
 
 // backgroundScanner periodically checks for new content
@@ -92,10 +148,13 @@ func (fs *FileStore) backgroundScanner() {
 	ticker := time.NewTicker(fs.refreshInterval)
 	defer ticker.Stop()
 
+	log.Printf("Started background content scanner (checking every %v)", fs.refreshInterval)
+
 	for {
 		<-ticker.C
+		log.Println("Running background content scan...")
 		if err := fs.ScanContent(); err != nil {
-			fmt.Printf("Error scanning content: %v\n", err)
+			log.Printf("Error during background content scan: %v", err)
 		}
 	}
 }
@@ -107,12 +166,13 @@ func (fs *FileStore) GetCurrentEpisode() *models.Episode {
 	return fs.CurrentEpisode
 }
 
-// AdvanceToNextEpisode changes to the next episode
+// AdvanceToNextEpisode changes to the next episode randomly
 func (fs *FileStore) AdvanceToNextEpisode() *models.Episode {
 	fs.episodesMutex.Lock()
 	defer fs.episodesMutex.Unlock()
 
 	if len(fs.Episodes) == 0 {
+		log.Println("No episodes available to advance to")
 		return nil
 	}
 
@@ -121,33 +181,43 @@ func (fs *FileStore) AdvanceToNextEpisode() *models.Episode {
 		// Update play time
 		fs.CurrentEpisode.PlayedAt = time.Now()
 
-		// Add to recently played, keeping only last 5
+		// Add to recently played, keeping only last 10
 		fs.RecentlyPlayed = append([]*models.Episode{fs.CurrentEpisode}, fs.RecentlyPlayed...)
-		if len(fs.RecentlyPlayed) > 5 {
-			fs.RecentlyPlayed = fs.RecentlyPlayed[:5]
+		if len(fs.RecentlyPlayed) > 10 {
+			fs.RecentlyPlayed = fs.RecentlyPlayed[:10]
+		}
+
+		log.Printf("Finished playing: %s", fs.CurrentEpisode.Title)
+	}
+
+	// Get list of unplayed episodes
+	var unplayedEpisodes []*models.Episode
+	for _, episode := range fs.Episodes {
+		if !fs.PlayedEpisodes[episode.ID] {
+			unplayedEpisodes = append(unplayedEpisodes, episode)
 		}
 	}
 
-	// Find current episode index
-	currentIndex := -1
-	if fs.CurrentEpisode != nil {
-		for i, e := range fs.Episodes {
-			if e.ID == fs.CurrentEpisode.ID {
-				currentIndex = i
-				break
-			}
-		}
+	// If we've played all episodes, reset the cycle and start over
+	if len(unplayedEpisodes) == 0 {
+		log.Println("Completed full episode cycle! Starting over with all episodes...")
+		fs.PlayedEpisodes = make(map[string]bool) // Reset played episodes
+		unplayedEpisodes = fs.Episodes            // All episodes are now available again
 	}
 
-	// Select next episode
-	nextIndex := 0
-	if currentIndex != -1 && currentIndex < len(fs.Episodes)-1 {
-		nextIndex = currentIndex + 1
-	}
+	// Select a random episode from unplayed episodes
+	randomIndex := fs.rng.Intn(len(unplayedEpisodes))
+	fs.CurrentEpisode = unplayedEpisodes[randomIndex]
 
-	fs.CurrentEpisode = fs.Episodes[nextIndex]
+	// Mark as played
+	fs.PlayedEpisodes[fs.CurrentEpisode.ID] = true
+
 	// Update with a new random fact
 	fs.CurrentEpisode.RandomFact = models.GetRandomFact()
+
+	log.Printf("Selected next random episode: %s (%d unplayed episodes remaining)",
+		fs.CurrentEpisode.Title, len(unplayedEpisodes)-1)
+
 	return fs.CurrentEpisode
 }
 
@@ -157,8 +227,6 @@ func (fs *FileStore) GetRecentlyPlayed() []*models.Episode {
 	defer fs.episodesMutex.RUnlock()
 	return fs.RecentlyPlayed
 }
-
-// Add these methods to your filestore.go file
 
 // GetAllEpisodes returns all discovered episodes
 func (fs *FileStore) GetAllEpisodes() []*models.Episode {
@@ -196,4 +264,21 @@ func (fs *FileStore) GetEpisodesByShow(showName string) []*models.Episode {
 		}
 	}
 	return episodes
+}
+
+// GetPlaybackStats returns information about the current playback cycle
+func (fs *FileStore) GetPlaybackStats() map[string]interface{} {
+	fs.episodesMutex.RLock()
+	defer fs.episodesMutex.RUnlock()
+
+	totalEpisodes := len(fs.Episodes)
+	playedCount := len(fs.PlayedEpisodes)
+	remainingCount := totalEpisodes - playedCount
+
+	return map[string]interface{}{
+		"total_episodes":     totalEpisodes,
+		"played_this_cycle":  playedCount,
+		"remaining_unplayed": remainingCount,
+		"cycle_progress":     float64(playedCount) / float64(totalEpisodes) * 100,
+	}
 }

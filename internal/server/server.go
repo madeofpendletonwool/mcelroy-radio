@@ -43,6 +43,12 @@ func New(cfg *config.Config) (*http.Server, error) {
 	r.Get("/directory", h.DirectoryPage)
 	r.Get("/stream-position", h.StreamPosition)
 
+	// Add the missing download route
+	r.Get("/download-episode", h.DownloadEpisode)
+
+	// Add episode details route for the directory
+	r.Get("/episode-details", h.EpisodeDetails)
+
 	// Static file server
 	log.Printf("Serving static files from: %s", cfg.StaticDir)
 	fileServer := http.FileServer(http.Dir(cfg.StaticDir))

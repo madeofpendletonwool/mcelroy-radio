@@ -1,15 +1,126 @@
-/* Base Styles */
+/* Base Theme Variables */
 :root {
+    /* Light Theme (Default) */
     --primary-color: #5e60ce;
     --secondary-color: #64dfdf;
     --accent-color: #ff7c7c;
     --background-color: #f8f9fa;
-    --text-color: #333;
-    --box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    --surface-color: #ffffff;
+    --text-color: #333333;
+    --text-muted: #666666;
+    --border-color: #e0e0e0;
+    --shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
     --border-radius: 12px;
     --transition: all 0.3s ease;
+
+    /* Theme specific */
+    --theme-name: "Light";
+    --gradient-primary: linear-gradient(
+        135deg,
+        var(--primary-color),
+        var(--secondary-color)
+    );
 }
 
+/* Dark Theme */
+[data-theme="dark"] {
+    --primary-color: #7c3aed;
+    --secondary-color: #06b6d4;
+    --accent-color: #f59e0b;
+    --background-color: #0f172a;
+    --surface-color: #1e293b;
+    --text-color: #f1f5f9;
+    --text-muted: #94a3b8;
+    --border-color: #334155;
+    --shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    --theme-name: "Dark";
+    --gradient-primary: linear-gradient(
+        135deg,
+        var(--primary-color),
+        var(--secondary-color)
+    );
+}
+
+/* Synthwave Theme */
+[data-theme="synthwave"] {
+    --primary-color: #ff0080;
+    --secondary-color: #00ffff;
+    --accent-color: #ffff00;
+    --background-color: #0a0a23;
+    --surface-color: #1a1a3a;
+    --text-color: #ffffff;
+    --text-muted: #ccccff;
+    --border-color: #ff0080;
+    --shadow: 0 4px 12px rgba(255, 0, 128, 0.3);
+    --theme-name: "Synthwave";
+    --gradient-primary: linear-gradient(135deg, #ff0080, #00ffff, #ffff00);
+}
+
+/* Forest Theme */
+[data-theme="forest"] {
+    --primary-color: #16a085;
+    --secondary-color: #27ae60;
+    --accent-color: #f39c12;
+    --background-color: #1e3a2e;
+    --surface-color: #2d5a3d;
+    --text-color: #ecf0f1;
+    --text-muted: #a8c8a8;
+    --border-color: #27ae60;
+    --shadow: 0 4px 12px rgba(22, 160, 133, 0.2);
+    --theme-name: "Forest";
+    --gradient-primary: linear-gradient(
+        135deg,
+        var(--primary-color),
+        var(--secondary-color)
+    );
+}
+
+/* Ocean Theme */
+[data-theme="ocean"] {
+    --primary-color: #3498db;
+    --secondary-color: #2980b9;
+    --accent-color: #1abc9c;
+    --background-color: #0c2d48;
+    --surface-color: #145374;
+    --text-color: #ffffff;
+    --text-muted: #b3d9ff;
+    --border-color: #3498db;
+    --shadow: 0 4px 12px rgba(52, 152, 219, 0.2);
+    --theme-name: "Ocean";
+    --gradient-primary: linear-gradient(
+        135deg,
+        var(--primary-color),
+        var(--secondary-color)
+    );
+}
+
+/* Hot Dog Stand Theme (Easter Egg) */
+[data-theme="hotdog"] {
+    --primary-color: #ff0000;
+    --secondary-color: #ffff00;
+    --accent-color: #ff8000;
+    --background-color: #ffff00;
+    --surface-color: #ff0000;
+    --text-color: #000000;
+    --text-muted: #800000;
+    --border-color: #ff0000;
+    --shadow: 0 4px 12px rgba(255, 0, 0, 0.8);
+    --theme-name: "🌭 HOT DOG STAND 🌭";
+    --gradient-primary: linear-gradient(
+        45deg,
+        #ff0000 25%,
+        #ffff00 25%,
+        #ffff00 50%,
+        #ff0000 50%,
+        #ff0000 75%,
+        #ffff00 75%
+    );
+
+    /* Hot Dog Stand specific crazy animations */
+    animation: hotdog-background 2s infinite linear;
+}
+
+/* Base Styles */
 * {
     box-sizing: border-box;
     margin: 0;
@@ -21,6 +132,7 @@ body {
     background-color: var(--background-color);
     color: var(--text-color);
     line-height: 1.6;
+    transition: var(--transition);
 }
 
 /* Container */
@@ -32,14 +144,10 @@ body {
 
 /* Header */
 header {
-    background: linear-gradient(
-        135deg,
-        var(--primary-color),
-        var(--secondary-color)
-    );
+    background: var(--gradient-primary);
     color: white;
     padding: 15px 0;
-    box-shadow: var(--box-shadow);
+    box-shadow: var(--shadow);
     position: sticky;
     top: 0;
     z-index: 100;
@@ -74,9 +182,16 @@ header {
     opacity: 0.8;
 }
 
+nav {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
 nav ul {
     display: flex;
     list-style: none;
+    margin: 0;
 }
 
 nav ul li {
@@ -96,15 +211,104 @@ nav ul li a:hover {
     background-color: rgba(255, 255, 255, 0.2);
 }
 
+/* Theme Selector */
+.theme-selector {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.theme-button {
+    background: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: white;
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: var(--transition);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.theme-button:hover {
+    background: rgba(255, 255, 255, 0.3);
+}
+
+.theme-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    min-width: 200px;
+    z-index: 1000;
+    margin-top: 5px;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-10px);
+    transition: all 0.3s ease;
+}
+
+.theme-dropdown.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.theme-option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    cursor: pointer;
+    transition: var(--transition);
+    color: var(--text-color);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.theme-option:last-child {
+    border-bottom: none;
+}
+
+.theme-option:hover {
+    background: var(--primary-color);
+    color: white;
+}
+
+.theme-option.active {
+    background: var(--primary-color);
+    color: white;
+    font-weight: 600;
+}
+
+.theme-preview {
+    display: flex;
+    gap: 3px;
+    margin-left: 10px;
+}
+
+.theme-preview-color {
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
 /* Player Section */
 .player-section {
-    background-color: white;
+    background-color: var(--surface-color);
     border-radius: var(--border-radius);
-    box-shadow: var(--box-shadow);
+    box-shadow: var(--shadow);
     padding: 25px;
     margin-bottom: 30px;
     position: relative;
     overflow: hidden;
+    border: 1px solid var(--border-color);
 }
 
 .player-section::before {
@@ -125,15 +329,18 @@ nav ul li a:hover {
 
 .episode-info {
     margin-bottom: 25px;
+    position: relative;
+    z-index: 1;
 }
 
 .episode-card {
     display: flex;
     align-items: flex-start;
-    background-color: #f9f9f9;
+    background-color: var(--background-color);
     border-radius: var(--border-radius);
     overflow: hidden;
     transition: var(--transition);
+    border: 1px solid var(--border-color);
 }
 
 .episode-card.current-episode {
@@ -177,7 +384,7 @@ nav ul li a:hover {
 
 .show-name {
     font-size: 0.9rem;
-    color: #666;
+    color: var(--text-muted);
     margin-bottom: 15px;
 }
 
@@ -186,6 +393,7 @@ nav ul li a:hover {
     border-radius: 8px;
     padding: 12px 15px;
     margin-top: 15px;
+    border: 1px solid var(--border-color);
 }
 
 .fact-box h4 {
@@ -203,6 +411,8 @@ nav ul li a:hover {
 #random-fact {
     font-style: italic;
     margin-bottom: 10px;
+    color: var(--text-color);
+    transition: opacity 0.3s ease;
 }
 
 .btn {
@@ -217,7 +427,7 @@ nav ul li a:hover {
 }
 
 .btn:hover {
-    background-color: #4a4bb7;
+    opacity: 0.8;
     transform: translateY(-2px);
 }
 
@@ -228,10 +438,11 @@ nav ul li a:hover {
 
 /* Audio Player Controls */
 .player-controls {
-    background-color: #f0f0f0;
+    background-color: var(--background-color);
     border-radius: var(--border-radius);
     padding: 20px;
     position: relative;
+    border: 1px solid var(--border-color);
 }
 
 .audio-player {
@@ -246,22 +457,25 @@ nav ul li a:hover {
 }
 
 .control-btn {
-    background-color: white;
-    border: none;
+    background-color: var(--surface-color);
+    border: 1px solid var(--border-color);
     width: 40px;
     height: 40px;
     border-radius: 50%;
     margin: 0 8px;
     cursor: pointer;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow);
     display: flex;
     justify-content: center;
     align-items: center;
     transition: var(--transition);
+    color: var(--text-color);
 }
 
 .control-btn:hover {
     transform: scale(1.1);
+    background-color: var(--primary-color);
+    color: white;
 }
 
 .control-btn-large {
@@ -272,7 +486,7 @@ nav ul li a:hover {
 }
 
 .control-btn-large:hover {
-    background-color: #4a4bb7;
+    background-color: var(--secondary-color);
 }
 
 .progress-container {
@@ -282,7 +496,7 @@ nav ul li a:hover {
 
 .progress-bar {
     height: 8px;
-    background-color: #ddd;
+    background-color: var(--border-color);
     border-radius: 4px;
     overflow: hidden;
     margin-bottom: 5px;
@@ -299,7 +513,7 @@ nav ul li a:hover {
     display: flex;
     justify-content: flex-end;
     font-size: 0.8rem;
-    color: #666;
+    color: var(--text-muted);
 }
 
 .volume-slider-container {
@@ -307,10 +521,11 @@ nav ul li a:hover {
     position: absolute;
     bottom: 70px;
     right: 20px;
-    background-color: white;
+    background-color: var(--surface-color);
+    border: 1px solid var(--border-color);
     border-radius: 5px;
     padding: 10px;
-    box-shadow: var(--box-shadow);
+    box-shadow: var(--shadow);
 }
 
 .volume-slider {
@@ -318,7 +533,7 @@ nav ul li a:hover {
     -webkit-appearance: none;
     height: 5px;
     border-radius: 2px;
-    background: #ddd;
+    background: var(--border-color);
     outline: none;
 }
 
@@ -334,11 +549,12 @@ nav ul li a:hover {
 
 /* Recently Played Section */
 .recently-played {
-    background-color: white;
+    background-color: var(--surface-color);
     border-radius: var(--border-radius);
-    box-shadow: var(--box-shadow);
+    box-shadow: var(--shadow);
     padding: 25px;
     margin-bottom: 30px;
+    border: 1px solid var(--border-color);
 }
 
 .recently-played h2 {
@@ -373,11 +589,12 @@ nav ul li a:hover {
 .episode-card.small .episode-details h4 {
     font-size: 1.1rem;
     margin-bottom: 5px;
+    color: var(--text-color);
 }
 
 .episode-card.small .play-time {
     font-size: 0.8rem;
-    color: #888;
+    color: var(--text-muted);
     margin-top: 8px;
 }
 
@@ -445,23 +662,25 @@ nav ul li a:hover {
 .radio-quote {
     position: relative;
     z-index: 1;
-    background-color: white;
+    background-color: var(--surface-color);
     padding: 20px;
     border-radius: var(--border-radius);
-    box-shadow: var(--box-shadow);
+    box-shadow: var(--shadow);
     max-width: 400px;
     text-align: center;
+    border: 1px solid var(--border-color);
 }
 
 .radio-quote blockquote {
     font-size: 1.2rem;
     font-style: italic;
     margin-bottom: 10px;
+    color: var(--text-color);
 }
 
 .radio-quote footer {
     font-size: 0.9rem;
-    color: #666;
+    color: var(--text-muted);
 }
 
 /* About Page Styles */
@@ -470,11 +689,12 @@ nav ul li a:hover {
 }
 
 .about-section {
-    background-color: white;
+    background-color: var(--surface-color);
     border-radius: var(--border-radius);
-    box-shadow: var(--box-shadow);
+    box-shadow: var(--shadow);
     padding: 30px;
     margin-bottom: 30px;
+    border: 1px solid var(--border-color);
 }
 
 .about-section h1 {
@@ -508,6 +728,7 @@ nav ul li a:hover {
 
 .about-text p {
     margin-bottom: 15px;
+    color: var(--text-color);
 }
 
 .about-text h2 {
@@ -517,28 +738,31 @@ nav ul li a:hover {
 }
 
 .quote-box {
-    background-color: #f9f9f9;
+    background-color: var(--background-color);
     border-radius: 8px;
     padding: 15px;
     margin-top: 20px;
+    border: 1px solid var(--border-color);
 }
 
 .quote-box blockquote {
     font-style: italic;
     margin-bottom: 8px;
+    color: var(--text-color);
 }
 
 .quote-box footer {
     text-align: right;
     font-size: 0.9rem;
-    color: #666;
+    color: var(--text-muted);
 }
 
 .shows-section {
-    background-color: white;
+    background-color: var(--surface-color);
     border-radius: var(--border-radius);
-    box-shadow: var(--box-shadow);
+    box-shadow: var(--shadow);
     padding: 30px;
+    border: 1px solid var(--border-color);
 }
 
 .shows-section h2 {
@@ -556,132 +780,45 @@ nav ul li a:hover {
 .show-card {
     border-radius: 8px;
     overflow: hidden;
-    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow);
     transition: var(--transition);
+    background-color: var(--background-color);
+    border: 1px solid var(--border-color);
 }
 
 .show-card:hover {
     transform: translateY(-5px);
-    box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
 }
 
 .show-image {
     height: 120px;
     background-size: cover;
     background-position: center;
-}
-
-.mbmbam {
-    background-color: #ffcc29;
-    background-image: url("/static/img/mbmbam.jpg");
-}
-
-.adventure-zone {
-    background-color: #81b29a;
-    background-image: url("/static/img/adventure-zone.jpg");
-}
-
-.sawbones {
-    background-color: #f28482;
-    background-image: url("/static/img/sawbones.jpg");
-}
-
-.wonderful {
-    background-color: #3d405b;
-    background-image: url("/static/img/wonderful.jpg");
+    background-color: var(--primary-color);
 }
 
 .show-card h3 {
     font-size: 1rem;
     padding: 12px 15px 8px;
+    color: var(--text-color);
 }
 
 .show-card p {
     font-size: 0.85rem;
     padding: 0 15px 15px;
-    color: #666;
+    color: var(--text-muted);
 }
 
-/* Footer */
-footer {
-    background-color: #222;
-    color: white;
-    padding: 20px 0;
-    margin-top: 50px;
-}
-
-.footer-container {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 0 20px;
-    text-align: center;
-}
-
-.footer-container p {
-    font-size: 0.9rem;
-    opacity: 0.8;
-    margin: 5px 0;
-}
-
-/* Responsive Styles */
-@media (max-width: 768px) {
-    .episode-card {
-        flex-direction: column;
-    }
-
-    .episode-image {
-        flex: 0 0 auto;
-        width: 100%;
-        height: 200px;
-    }
-
-    .about-content {
-        flex-direction: column;
-    }
-
-    .about-image {
-        flex: 0 0 auto;
-        margin-bottom: 20px;
-    }
-}
-
-@media (max-width: 480px) {
-    .logo h1 {
-        font-size: 1.5rem;
-    }
-
-    .tagline {
-        font-size: 0.8rem;
-    }
-
-    nav ul li {
-        margin-left: 10px;
-    }
-
-    nav ul li a {
-        padding: 3px 8px;
-        font-size: 0.9rem;
-    }
-
-    .episode-details h3 {
-        font-size: 1.2rem;
-    }
-
-    .shows-grid {
-        grid-template-columns: 1fr;
-    }
-}
-
-/* Directory Page Styles - Add these to your styles.css file */
-
-/* Directory Header */
+/* Directory Page Styles */
 .directory-header {
-    background-color: white;
+    background-color: var(--surface-color);
     border-radius: var(--border-radius);
-    box-shadow: var(--box-shadow);
+    box-shadow: var(--shadow);
     padding: 30px;
     margin-bottom: 30px;
     text-align: center;
+    border: 1px solid var(--border-color);
 }
 
 .directory-header h1 {
@@ -691,7 +828,7 @@ footer {
 }
 
 .directory-subtitle {
-    color: #666;
+    color: var(--text-muted);
     font-size: 1.1rem;
     margin-bottom: 25px;
 }
@@ -709,11 +846,13 @@ footer {
 .show-filter,
 .sort-select {
     padding: 10px 15px;
-    border: 2px solid #e0e0e0;
+    border: 2px solid var(--border-color);
     border-radius: 8px;
     font-size: 0.95rem;
     min-width: 200px;
     transition: var(--transition);
+    background-color: var(--surface-color);
+    color: var(--text-color);
 }
 
 .search-input:focus,
@@ -726,11 +865,12 @@ footer {
 
 /* Show Sections */
 .show-section {
-    background-color: white;
+    background-color: var(--surface-color);
     border-radius: var(--border-radius);
-    box-shadow: var(--box-shadow);
+    box-shadow: var(--shadow);
     padding: 25px;
     margin-bottom: 30px;
+    border: 1px solid var(--border-color);
 }
 
 .show-header {
@@ -739,7 +879,7 @@ footer {
     align-items: center;
     margin-bottom: 20px;
     padding-bottom: 15px;
-    border-bottom: 2px solid #f0f0f0;
+    border-bottom: 2px solid var(--border-color);
 }
 
 .show-header h2 {
@@ -752,15 +892,16 @@ footer {
     display: flex;
     gap: 20px;
     font-size: 0.9rem;
-    color: #666;
+    color: var(--text-muted);
 }
 
 .episode-count,
 .total-duration {
-    background-color: #f9f9f9;
+    background-color: var(--background-color);
     padding: 5px 12px;
     border-radius: 15px;
     font-weight: 600;
+    border: 1px solid var(--border-color);
 }
 
 /* Episodes Grid */
@@ -776,12 +917,12 @@ footer {
 
 .episode-card-dir {
     display: flex;
-    background-color: #f9f9f9;
+    background-color: var(--background-color);
     border-radius: var(--border-radius);
     overflow: hidden;
     height: 140px;
     transition: var(--transition);
-    border: 2px solid transparent;
+    border: 2px solid var(--border-color);
 }
 
 .episode-card-dir:hover {
@@ -830,7 +971,7 @@ footer {
     display: flex;
     gap: 12px;
     font-size: 0.8rem;
-    color: #666;
+    color: var(--text-muted);
     margin-bottom: 8px;
     flex-wrap: wrap;
 }
@@ -842,17 +983,6 @@ footer {
     padding: 2px 8px;
     border-radius: 10px;
     font-weight: 500;
-}
-
-.episode-description {
-    font-size: 0.8rem;
-    color: #777;
-    margin: 0 0 10px 0;
-    line-height: 1.3;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
 }
 
 .episode-actions {
@@ -870,140 +1000,365 @@ footer {
     background-color: #5a6268;
 }
 
-/* Modal Styles */
-.modal {
-    position: fixed;
-    z-index: 1000;
-    left: 0;
+/* Footer */
+footer {
+    background-color: var(--surface-color);
+    color: var(--text-color);
+    padding: 20px 0;
+    margin-top: 50px;
+    border-top: 1px solid var(--border-color);
+}
+
+.footer-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 20px;
+    text-align: center;
+}
+
+.footer-container p {
+    font-size: 0.9rem;
+    opacity: 0.8;
+    margin: 5px 0;
+    color: var(--text-muted);
+}
+
+/* Loading Overlay Styles */
+.loading-overlay {
+    position: absolute;
     top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    border-radius: var(--border-radius);
+    transition:
+        opacity 0.5s ease,
+        visibility 0.5s ease;
+}
+
+[data-theme="dark"] .loading-overlay {
+    background: rgba(15, 23, 42, 0.95);
+}
+
+[data-theme="synthwave"] .loading-overlay {
+    background: rgba(10, 10, 35, 0.95);
+}
+
+[data-theme="forest"] .loading-overlay {
+    background: rgba(30, 58, 46, 0.95);
+}
+
+[data-theme="ocean"] .loading-overlay {
+    background: rgba(12, 45, 72, 0.95);
+}
+
+.loading-overlay.hidden {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.loading-content {
+    text-align: center;
+    max-width: 300px;
+    padding: 20px;
+}
+
+.loading-spinner {
+    position: relative;
+    width: 80px;
+    height: 80px;
+    margin: 0 auto 20px;
+}
+
+.spinner-ring {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
     height: 100%;
-    background-color: rgba(0, 0, 0, 0.5);
-    display: flex;
-    justify-content: center;
-    align-items: center;
+    border: 3px solid transparent;
+    border-top-color: var(--primary-color);
+    border-radius: 50%;
+    animation: spin 1.5s linear infinite;
 }
 
-.modal-content {
-    background-color: white;
-    border-radius: var(--border-radius);
-    max-width: 600px;
-    width: 90%;
-    max-height: 80vh;
-    overflow-y: auto;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+.spinner-ring:nth-child(2) {
+    width: 60px;
+    height: 60px;
+    top: 10px;
+    left: 10px;
+    border-top-color: var(--secondary-color);
+    animation-duration: 2s;
+    animation-direction: reverse;
 }
 
-.modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 20px 25px;
-    border-bottom: 1px solid #e0e0e0;
+.spinner-ring:nth-child(3) {
+    width: 40px;
+    height: 40px;
+    top: 20px;
+    left: 20px;
+    border-top-color: var(--accent-color);
+    animation-duration: 1s;
 }
 
-.modal-header h2 {
+@keyframes spin {
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
+.loading-content h3 {
+    color: var(--primary-color);
+    margin-bottom: 10px;
+    font-size: 1.2rem;
+    font-weight: 600;
+}
+
+.loading-content p {
+    color: var(--text-muted);
+    font-size: 0.9rem;
     margin: 0;
-    color: var(--primary-color);
-    font-size: 1.3rem;
+    opacity: 0.8;
 }
 
-.modal-close {
-    background: none;
-    border: none;
-    font-size: 1.5rem;
-    cursor: pointer;
-    color: #666;
-    padding: 0;
-    width: 30px;
-    height: 30px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
+/* Hot Dog Stand Easter Egg Styles */
+[data-theme="hotdog"] {
+    background-image: repeating-linear-gradient(
+        45deg,
+        #ff0000 0px,
+        #ff0000 10px,
+        #ffff00 10px,
+        #ffff00 20px
+    );
+    animation: hotdog-background 2s infinite linear;
 }
 
-.modal-close:hover {
-    color: var(--accent-color);
+[data-theme="hotdog"] .player-section {
+    animation: hotdog-wiggle 0.5s infinite alternate;
+    border: 3px solid #ff0000;
+    background: #ffff00;
+    box-shadow: 0 0 20px rgba(255, 0, 0, 0.8);
 }
 
-.modal-body {
-    padding: 25px;
+[data-theme="hotdog"] .episode-card {
+    animation: hotdog-bounce 1s infinite;
+    border: 2px solid #ff0000;
+    background: #ffff00;
 }
 
-.modal-footer {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
-    padding: 20px 25px;
-    border-top: 1px solid #e0e0e0;
-    background-color: #f9f9f9;
+[data-theme="hotdog"] .control-btn {
+    animation: hotdog-spin 2s infinite linear;
+    background: #ff0000;
+    color: #ffff00;
+    border: 2px solid #ffff00;
 }
 
-.episode-detail-content {
-    line-height: 1.6;
+[data-theme="hotdog"] .btn {
+    animation: hotdog-pulse 0.5s infinite alternate;
+    background: #ff0000;
+    border: 2px solid #ffff00;
+    color: #ffff00;
 }
 
-.detail-row {
-    margin-bottom: 15px;
-    padding-bottom: 10px;
+[data-theme="hotdog"] h1,
+[data-theme="hotdog"] h2,
+[data-theme="hotdog"] h3 {
+    animation: hotdog-rainbow 1s infinite linear;
+    text-shadow: 2px 2px 0 #000000;
+    font-weight: 900;
 }
 
-.detail-row:not(:last-child) {
-    border-bottom: 1px solid #f0f0f0;
+[data-theme="hotdog"] .loading-overlay {
+    background: repeating-linear-gradient(
+        45deg,
+        rgba(255, 0, 0, 0.9) 0px,
+        rgba(255, 0, 0, 0.9) 10px,
+        rgba(255, 255, 0, 0.9) 10px,
+        rgba(255, 255, 0, 0.9) 20px
+    );
+    animation: hotdog-background 1s infinite linear;
 }
 
-.detail-row strong {
-    color: var(--primary-color);
-    display: inline-block;
-    min-width: 100px;
+/* Hot Dog Stand Animations */
+@keyframes hotdog-wiggle {
+    0% {
+        transform: rotate(-1deg);
+    }
+    100% {
+        transform: rotate(1deg);
+    }
 }
 
-.detail-row code {
-    background-color: #f5f5f5;
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-family: "Monaco", "Consolas", monospace;
-    font-size: 0.85rem;
-    word-break: break-all;
+@keyframes hotdog-bounce {
+    0%,
+    100% {
+        transform: translateY(0px);
+    }
+    50% {
+        transform: translateY(-10px);
+    }
 }
 
-/* Download Toast */
-.download-toast {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    background-color: var(--primary-color);
-    color: white;
-    padding: 15px 20px;
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-    z-index: 1000;
-    animation: slideInRight 0.3s ease;
-}
-
-.toast-content {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.toast-content i {
-    font-size: 1.1rem;
-}
-
-@keyframes slideInRight {
+@keyframes hotdog-spin {
     from {
-        transform: translateX(100%);
-        opacity: 0;
+        transform: rotate(0deg);
     }
     to {
-        transform: translateX(0);
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes hotdog-pulse {
+    0% {
+        transform: scale(1);
+    }
+    100% {
+        transform: scale(1.1);
+    }
+}
+
+@keyframes hotdog-rainbow {
+    0% {
+        color: #ff0000;
+    }
+    25% {
+        color: #ffff00;
+    }
+    50% {
+        color: #ff0000;
+    }
+    75% {
+        color: #ffff00;
+    }
+    100% {
+        color: #ff0000;
+    }
+}
+
+@keyframes hotdog-background {
+    0% {
+        background-position: 0 0;
+    }
+    100% {
+        background-position: 20px 20px;
+    }
+}
+
+/* Floating Hot Dogs */
+.floating-hotdog {
+    position: fixed;
+    font-size: 2rem;
+    pointer-events: none;
+    z-index: 9999;
+    animation: float-across 3s linear infinite;
+}
+
+@keyframes float-across {
+    0% {
+        transform: translateX(-100px) rotate(0deg);
         opacity: 1;
     }
+    100% {
+        transform: translateX(calc(100vw + 100px)) rotate(720deg);
+        opacity: 0;
+    }
+}
+
+/* Theme-specific effects */
+[data-theme="synthwave"] .player-section {
+    box-shadow: 0 0 20px rgba(255, 0, 128, 0.3);
+}
+
+[data-theme="synthwave"] .control-btn:hover {
+    box-shadow: 0 0 15px rgba(0, 255, 255, 0.5);
+}
+
+[data-theme="synthwave"] .wave {
+    border-color: #00ffff;
+    box-shadow: 0 0 10px rgba(0, 255, 255, 0.3);
+}
+
+[data-theme="forest"] .wave {
+    border-color: #27ae60;
+}
+
+[data-theme="ocean"] .wave {
+    border-color: #3498db;
+}
+
+/* Enhanced disabled states */
+.control-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+    background-color: var(--border-color) !important;
+    color: var(--text-muted) !important;
+}
+
+.volume-slider:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: var(--border-color) !important;
+}
+
+.volume-slider:disabled::-webkit-slider-thumb {
+    background: var(--text-muted) !important;
+    cursor: not-allowed;
+}
+
+/* Stream notifications */
+#stream-notification {
+    font-family: inherit;
+    font-weight: 500;
+    border-left: 4px solid rgba(255, 255, 255, 0.3);
+    backdrop-filter: blur(10px);
 }
 
 /* Responsive Design */
 @media (max-width: 768px) {
+    .theme-selector {
+        order: -1;
+    }
+
+    nav {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .nav-container {
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    .episode-card {
+        flex-direction: column;
+    }
+
+    .episode-image {
+        flex: 0 0 auto;
+        width: 100%;
+        height: 200px;
+    }
+
+    .about-content {
+        flex-direction: column;
+    }
+
+    .about-image {
+        flex: 0 0 auto;
+        margin-bottom: 20px;
+    }
+
     .directory-controls {
         flex-direction: column;
         align-items: center;
@@ -1023,34 +1378,28 @@ footer {
         gap: 10px;
     }
 
-    .show-stats {
-        gap: 10px;
-    }
-
     .episodes-grid {
         grid-template-columns: 1fr;
-    }
-
-    .episode-card-dir {
-        height: auto;
-        min-height: 120px;
-    }
-
-    .episode-actions {
-        flex-direction: column;
-    }
-
-    .modal-content {
-        width: 95%;
-        margin: 10px;
-    }
-
-    .modal-footer {
-        flex-direction: column;
     }
 }
 
 @media (max-width: 480px) {
+    .logo h1 {
+        font-size: 1.5rem;
+    }
+
+    .tagline {
+        font-size: 0.8rem;
+    }
+
+    .episode-details h3 {
+        font-size: 1.2rem;
+    }
+
+    .shows-grid {
+        grid-template-columns: 1fr;
+    }
+
     .episode-card-dir {
         flex-direction: column;
         height: auto;
@@ -1065,8 +1414,47 @@ footer {
     .directory-header h1 {
         font-size: 1.8rem;
     }
+}
 
-    .episode-meta {
-        font-size: 0.75rem;
+/* Theme transition effects */
+body,
+.player-section,
+.episode-card,
+.control-btn,
+header,
+.recently-played,
+.about-section,
+.shows-section {
+    transition: all 0.3s ease;
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+    .spinner-ring,
+    .control-btn.loading::after,
+    .wave,
+    [data-theme="hotdog"] * {
+        animation: none !important;
+    }
+
+    .loading-overlay,
+    .theme-dropdown,
+    * {
+        transition: none !important;
+    }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+    .loading-overlay {
+        border: 2px solid var(--text-color);
+    }
+
+    .spinner-ring {
+        border-width: 4px;
+    }
+
+    .theme-dropdown {
+        border-width: 2px;
     }
 }
