@@ -6,7 +6,7 @@
         <div class="about-content">
             <div class="about-image">
                 <img
-                    src="/static/img/radio-illustration.svg"
+                    src="/static/img/radio.png"
                     alt="Cartoon Radio Illustration"
                 />
             </div>
@@ -43,11 +43,18 @@
                     podcasts.
                 </p>
 
-                <div class="quote-box">
+                <div class="quote-box" id="mcelroy-quote-box">
                     <blockquote>
                         "I live my life a quarter bit at a time."
                         <footer>— Justin McElroy, probably</footer>
                     </blockquote>
+                    <button
+                        onclick="updateQuoteBox()"
+                        class="btn btn-small"
+                        style="margin-top: 10px"
+                    >
+                        <i class="fas fa-sync-alt"></i> New Quote
+                    </button>
                 </div>
             </div>
         </div>

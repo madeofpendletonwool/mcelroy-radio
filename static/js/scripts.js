@@ -325,10 +325,13 @@ class GlobalRadioPlayer {
   }
 
   bindPageSpecificElements() {
+    console.log("🔧 Binding page-specific elements...");
+
     // Rebind page-specific functionality like the random fact button
     const newFactBtn = document.getElementById("new-fact-btn");
     if (newFactBtn) {
       newFactBtn.addEventListener("click", getRandomFact);
+      console.log("🔧 Bound random fact button");
     }
 
     // Radio quote functionality for homepage
@@ -337,7 +340,335 @@ class GlobalRadioPlayer {
       radioQuote.dataset.bound = "true";
       updateRadioQuote();
       setInterval(updateRadioQuote, 60000);
+      console.log("🔧 Bound radio quote functionality");
     }
+
+    // Directory page functionality
+    this.setupDirectoryFunctionality();
+  }
+
+  setupDirectoryFunctionality() {
+    console.log("🔍 Setting up directory functionality...");
+
+    // Check if we're on the directory page
+    const searchInput = document.getElementById("episode-search");
+    if (!searchInput) {
+      console.log("🔍 Not on directory page, skipping directory setup");
+      return;
+    }
+
+    console.log("🔍 Directory page detected, initializing...");
+
+    // Elements
+    const searchStats = document.getElementById("search-stats");
+    const searchResultsCount = document.getElementById("search-results-count");
+    const clearSearchBtn = document.getElementById("clear-search");
+    const expandAllBtn = document.getElementById("expand-all-btn");
+    const collapseAllBtn = document.getElementById("collapse-all-btn");
+    const noResults = document.getElementById("no-results");
+
+    // Get all episodes and shows
+    const episodeItems = document.querySelectorAll(".episode-item");
+    const showSections = document.querySelectorAll(".show-section");
+    const collapseToggles = document.querySelectorAll(".collapse-toggle");
+
+    console.log("🔍 Found directory elements:", {
+      episodeItems: episodeItems.length,
+      showSections: showSections.length,
+      collapseToggles: collapseToggles.length,
+    });
+
+    if (episodeItems.length === 0) {
+      console.log("🔍 No episode items found, skipping directory setup");
+      return;
+    }
+
+    // Sort episodes by date (newest first) on page load
+    this.sortEpisodesByDate(showSections);
+
+    // Search functionality with debouncing
+    let searchTimeout;
+    searchInput.addEventListener("input", (event) => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(() => {
+        this.performSearch(event.target.value.trim(), {
+          episodeItems,
+          showSections,
+          searchStats,
+          searchResultsCount,
+          noResults,
+        });
+      }, 300);
+    });
+
+    // Clear search
+    if (clearSearchBtn) {
+      clearSearchBtn.addEventListener("click", () => {
+        searchInput.value = "";
+        this.performSearch("", {
+          episodeItems,
+          showSections,
+          searchStats,
+          searchResultsCount,
+          noResults,
+        });
+        searchInput.focus();
+      });
+    }
+
+    // Expand/Collapse all
+    if (expandAllBtn) {
+      expandAllBtn.addEventListener("click", () => {
+        this.expandAllSections(collapseToggles, showSections);
+      });
+    }
+
+    if (collapseAllBtn) {
+      collapseAllBtn.addEventListener("click", () => {
+        this.collapseAllSections(collapseToggles, showSections);
+      });
+    }
+
+    // Individual collapse toggles
+    collapseToggles.forEach((toggle) => {
+      toggle.addEventListener("click", (event) => {
+        const showSection = event.target.closest(".show-section");
+        const episodesContainer = showSection.querySelector(
+          ".episodes-container",
+        );
+        const isExpanded = toggle.getAttribute("aria-expanded") === "true";
+
+        this.toggleSection(episodesContainer, !isExpanded);
+        toggle.setAttribute("aria-expanded", !isExpanded);
+
+        // Update button states
+        this.updateExpandCollapseButtons(
+          collapseToggles,
+          showSections,
+          expandAllBtn,
+          collapseAllBtn,
+        );
+      });
+    });
+
+    // Keyboard shortcuts for directory
+    const directoryKeyHandler = (event) => {
+      // Don't interfere with other inputs
+      if (event.target.matches("input, textarea")) return;
+
+      switch (event.key) {
+        case "/":
+          event.preventDefault();
+          searchInput.focus();
+          break;
+        case "Escape":
+          if (document.activeElement === searchInput) {
+            searchInput.blur();
+          }
+          break;
+      }
+    };
+
+    // Remove existing directory key handler if it exists
+    if (this.directoryKeyHandler) {
+      document.removeEventListener("keydown", this.directoryKeyHandler);
+    }
+
+    // Add new handler and store reference
+    this.directoryKeyHandler = directoryKeyHandler;
+    document.addEventListener("keydown", directoryKeyHandler);
+
+    // Initialize button states
+    this.updateExpandCollapseButtons(
+      collapseToggles,
+      showSections,
+      expandAllBtn,
+      collapseAllBtn,
+    );
+
+    console.log("🔍 Directory functionality setup complete!");
+  }
+
+  // Directory helper methods
+  sortEpisodesByDate(showSections) {
+    showSections.forEach((showSection) => {
+      const episodesGrid = showSection.querySelector(".episodes-grid");
+      if (!episodesGrid) return;
+
+      const episodes = Array.from(
+        episodesGrid.querySelectorAll(".episode-item"),
+      );
+
+      episodes.sort((a, b) => {
+        const dateA = new Date(a.dataset.episodeDate);
+        const dateB = new Date(b.dataset.episodeDate);
+        return dateB - dateA; // Newest first
+      });
+
+      // Reorder in DOM
+      episodes.forEach((episode) => {
+        episodesGrid.appendChild(episode);
+      });
+    });
+  }
+
+  performSearch(query, elements) {
+    const {
+      episodeItems,
+      showSections,
+      searchStats,
+      searchResultsCount,
+      noResults,
+    } = elements;
+
+    console.log("🔍 Performing search for:", query);
+
+    if (!query) {
+      // Show all episodes
+      episodeItems.forEach((item) => {
+        item.classList.remove("hidden");
+      });
+      showSections.forEach((section) => {
+        section.style.display = "block";
+      });
+      if (searchStats) searchStats.style.display = "none";
+      if (noResults) noResults.style.display = "none";
+      this.updateShowStats(showSections);
+      return;
+    }
+
+    const queryLower = query.toLowerCase();
+    let visibleCount = 0;
+
+    showSections.forEach((showSection) => {
+      const sectionEpisodeItems = showSection.querySelectorAll(".episode-item");
+      let showHasVisible = false;
+
+      sectionEpisodeItems.forEach((item) => {
+        const title = item.dataset.episodeTitle?.toLowerCase() || "";
+        const date = item.dataset.episodeDate?.toLowerCase() || "";
+        const showName = item.dataset.showName?.toLowerCase() || "";
+
+        const matches =
+          title.includes(queryLower) ||
+          date.includes(queryLower) ||
+          showName.includes(queryLower);
+
+        if (matches) {
+          item.classList.remove("hidden");
+          showHasVisible = true;
+          visibleCount++;
+        } else {
+          item.classList.add("hidden");
+        }
+      });
+
+      if (showHasVisible) {
+        showSection.style.display = "block";
+
+        // Auto-expand sections with results
+        const episodesContainer = showSection.querySelector(
+          ".episodes-container",
+        );
+        const toggle = showSection.querySelector(".collapse-toggle");
+        if (episodesContainer && toggle) {
+          this.toggleSection(episodesContainer, true);
+          toggle.setAttribute("aria-expanded", "true");
+        }
+      } else {
+        showSection.style.display = "none";
+      }
+    });
+
+    // Update search stats
+    if (searchResultsCount) searchResultsCount.textContent = visibleCount;
+    if (searchStats) searchStats.style.display = "block";
+
+    // Show/hide no results
+    if (noResults) {
+      if (visibleCount === 0) {
+        noResults.style.display = "block";
+      } else {
+        noResults.style.display = "none";
+      }
+    }
+
+    this.updateShowStats(showSections);
+    console.log("🔍 Search complete, found", visibleCount, "episodes");
+  }
+
+  updateShowStats(showSections) {
+    showSections.forEach((showSection) => {
+      const visibleEpisodes = showSection.querySelectorAll(
+        ".episode-item:not(.hidden)",
+      );
+      const visibleCountEl = showSection.querySelector(".visible-count");
+      if (visibleCountEl) {
+        visibleCountEl.textContent = visibleEpisodes.length;
+      }
+    });
+  }
+
+  toggleSection(container, expand) {
+    if (!container) return;
+
+    if (expand) {
+      container.classList.remove("collapsed");
+      container.style.maxHeight = container.scrollHeight + "px";
+    } else {
+      container.classList.add("collapsed");
+      container.style.maxHeight = "0px";
+    }
+  }
+
+  expandAllSections(collapseToggles, showSections) {
+    console.log("🔍 Expanding all sections");
+    collapseToggles.forEach((toggle) => {
+      const showSection = toggle.closest(".show-section");
+      if (showSection && showSection.style.display !== "none") {
+        const episodesContainer = showSection.querySelector(
+          ".episodes-container",
+        );
+        this.toggleSection(episodesContainer, true);
+        toggle.setAttribute("aria-expanded", "true");
+      }
+    });
+    this.updateExpandCollapseButtons(collapseToggles, showSections);
+  }
+
+  collapseAllSections(collapseToggles, showSections) {
+    console.log("🔍 Collapsing all sections");
+    collapseToggles.forEach((toggle) => {
+      const showSection = toggle.closest(".show-section");
+      if (showSection && showSection.style.display !== "none") {
+        const episodesContainer = showSection.querySelector(
+          ".episodes-container",
+        );
+        this.toggleSection(episodesContainer, false);
+        toggle.setAttribute("aria-expanded", "false");
+      }
+    });
+    this.updateExpandCollapseButtons(collapseToggles, showSections);
+  }
+
+  updateExpandCollapseButtons(
+    collapseToggles,
+    showSections,
+    expandAllBtn,
+    collapseAllBtn,
+  ) {
+    if (!expandAllBtn || !collapseAllBtn) return;
+
+    const visibleSections = Array.from(showSections).filter(
+      (section) => section.style.display !== "none",
+    );
+    const expandedSections = visibleSections.filter((section) => {
+      const toggle = section.querySelector(".collapse-toggle");
+      return toggle && toggle.getAttribute("aria-expanded") === "true";
+    });
+
+    expandAllBtn.disabled = expandedSections.length === visibleSections.length;
+    collapseAllBtn.disabled = expandedSections.length === 0;
   }
 
   setupAudioPlayer() {
@@ -1136,6 +1467,61 @@ class GlobalRadioPlayer {
   }
 }
 
+// McElroy Brothers Quotes for About Page
+const mcElroyQuotes = [
+  {
+    text: "I live my life a quarter bit at a time.",
+    author: "Justin McElroy, probably",
+  },
+  { text: "Unless...", author: "Griffin McElroy" },
+  { text: "Play with me in this space.", author: "Travis McElroy" },
+  {
+    text: "Glass shark, glass shark. He love the fat kid.",
+    author: "Justin McElroy",
+  },
+  { text: "Hachi machi!", author: "Justin McElroy" },
+  {
+    text: "It's familiar, but not too familiar, but not too not familiar.",
+    author: "Griffin McElroy",
+  },
+  { text: "I think dogs should vote!", author: "Justin McElroy" },
+  { text: "Shrimp! Heaven! Now!", author: "Griffin McElroy" },
+  { text: "It's your birth right!", author: "Travis McElroy" },
+  { text: "Squad goals: touch the Skyrim.", author: "Griffin McElroy" },
+  {
+    text: "Thirty. Under. Thirty. Media. Luminary.",
+    author: "Griffin McElroy",
+  },
+  { text: "Can I pet that dog?", author: "All the McElroys, spiritually" },
+  {
+    text: "I'm not a regular brother, I'm a cool brother.",
+    author: "Travis McElroy, adapting Mean Girls",
+  },
+  { text: "Riddle me piss, boys.", author: "Justin McElroy" },
+  { text: "Don't do a hit!", author: "Griffin McElroy" },
+  { text: "Kiss your dad square on the lips.", author: "Travis McElroy" },
+  { text: "Munch Squad!", author: "Justin McElroy" },
+  {
+    text: "I'm your sweet baby brother, 30 under 30 media luminary Griffin McElroy.",
+    author: "Griffin McElroy",
+  },
+  { text: "That's a very good dog.", author: "Travis McElroy" },
+  { text: "Cool games for cool people.", author: "Griffin McElroy" },
+];
+
+function getRandomMcElroyQuote() {
+  const randomIndex = Math.floor(Math.random() * mcElroyQuotes.length);
+  return mcElroyQuotes[randomIndex];
+}
+
+function updateQuoteBox() {
+  const quoteBox = document.querySelector(".quote-box blockquote");
+  if (quoteBox) {
+    const quote = getRandomMcElroyQuote();
+    quoteBox.innerHTML = `"${quote.text}"<footer>— ${quote.author}</footer>`;
+  }
+}
+
 // Global instance management
 let globalRadioPlayer = null;
 
@@ -1193,10 +1579,6 @@ function getRandomQuote() {
     {
       text: "I'm your dungeon master, your best friend, and your dungeon daddy, Griffin McElroy.",
       author: "Griffin McElroy",
-    },
-    {
-      text: "Glass shark, glass shark. He love the fat kid.",
-      author: "Justin McElroy",
     },
     { text: "Play with me in this space.", author: "Travis McElroy" },
     { text: "Hachi machi!", author: "Justin McElroy" },
@@ -1646,3 +2028,16 @@ if (typeof module !== "undefined" && module.exports) {
   window.GlobalRadioPlayer = GlobalRadioPlayer;
   window.ThemeManager = ThemeManager;
 }
+
+// Initialize page-specific functionality on load
+document.addEventListener("DOMContentLoaded", function () {
+  // Initialize quote box on about page
+  if (
+    window.location.pathname === "/about" ||
+    window.location.pathname.includes("/about")
+  ) {
+    updateQuoteBox();
+    // Auto-rotate quotes every 15 seconds
+    setInterval(updateQuoteBox, 15000);
+  }
+});

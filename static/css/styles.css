@@ -571,12 +571,34 @@ nav ul li a:hover {
 }
 
 .player-loading-spinner {
-    width: 20px;
-    height: 20px;
-    border: 2px solid var(--border-color);
-    border-top-color: var(--primary-color);
+    width: 40px;
+    height: 40px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.player-loading-spinner::before,
+.player-loading-spinner::after {
+    content: "";
+    position: absolute;
     border-radius: 50%;
-    animation: spin 1s linear infinite;
+    animation: pulse-ring 2s ease-in-out infinite;
+}
+
+.player-loading-spinner::before {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--primary-color);
+    animation-delay: 0s;
+}
+
+.player-loading-spinner::after {
+    width: 30px;
+    height: 30px;
+    border: 2px solid var(--secondary-color);
+    animation-delay: 0.5s;
 }
 
 /* Main content adjustments - remove old player section styles */
@@ -1869,5 +1891,20 @@ header,
         padding-left: max(20px, env(safe-area-inset-left));
         padding-right: max(20px, env(safe-area-inset-right));
         padding-bottom: max(0px, env(safe-area-inset-bottom));
+    }
+}
+
+@keyframes pulse-ring {
+    0% {
+        transform: scale(0.8);
+        opacity: 1;
+    }
+    50% {
+        transform: scale(1.2);
+        opacity: 0.7;
+    }
+    100% {
+        transform: scale(0.8);
+        opacity: 1;
     }
 }
