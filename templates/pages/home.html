@@ -1,19 +1,6 @@
 {{ define "content" }}
 <div class="container">
     <section class="player-section">
-        <!-- Loading Overlay -->
-        <div id="loading-overlay" class="loading-overlay">
-            <div class="loading-content">
-                <div class="loading-spinner">
-                    <div class="spinner-ring"></div>
-                    <div class="spinner-ring"></div>
-                    <div class="spinner-ring"></div>
-                </div>
-                <h3>Tuning in to McElroy Radio...</h3>
-                <p id="loading-status">Connecting to stream</p>
-            </div>
-        </div>
-
         <div class="episode-info">
             {{ if .CurrentEpisode }}
             <div class="episode-card current-episode">
@@ -71,65 +58,20 @@
             {{ end }}
         </div>
 
-        <div class="player-controls">
-            <div class="audio-player">
-                <audio id="audio-stream" preload="auto" autoplay>
-                    <source src="/stream" type="audio/mpeg" />
-                    Your browser does not support the audio element.
-                </audio>
-
-                <div class="playback-controls">
-                    <button
-                        id="rewind-btn"
-                        class="control-btn"
-                        title="Rewind 15 seconds"
-                        disabled
-                    >
-                        <i class="fas fa-backward"></i>
-                    </button>
-                    <button
-                        id="play-btn"
-                        class="control-btn control-btn-large"
-                        title="Play/Pause"
-                        disabled
-                    >
-                        <i class="fas fa-play"></i>
-                    </button>
-                    <button
-                        id="volume-btn"
-                        class="control-btn"
-                        title="Adjust Volume"
-                        disabled
-                    >
-                        <i class="fas fa-volume-mute"></i>
-                    </button>
-                </div>
-
-                <div class="progress-container">
-                    <div class="progress-bar">
-                        <div id="progress" class="progress"></div>
-                    </div>
-                    <div class="time-display">
-                        <span id="current-time">00:00</span> /
-                        <span id="duration">--:--</span>
-                    </div>
-                </div>
-
-                <div
-                    class="volume-slider-container"
-                    id="volume-slider-container"
-                >
-                    <input
-                        type="range"
-                        min="0"
-                        max="100"
-                        value="80"
-                        class="volume-slider"
-                        id="volume-slider"
-                        disabled
-                    />
-                </div>
-            </div>
+        <!-- Player controls are now in the global fixed bar -->
+        <div class="player-notice">
+            <p
+                style="
+                    text-align: center;
+                    color: var(--text-muted);
+                    font-style: italic;
+                    margin-top: 20px;
+                "
+            >
+                <i class="fas fa-arrow-down"></i>
+                Player controls are at the bottom of your screen
+                <i class="fas fa-arrow-down"></i>
+            </p>
         </div>
     </section>
 
@@ -160,227 +102,5 @@
             {{ end }}
         </div>
     </section>
-
-    <section class="radio-decoration">
-        <div class="radio-waves">
-            <div class="wave wave1"></div>
-            <div class="wave wave2"></div>
-            <div class="wave wave3"></div>
-        </div>
-        <div class="radio-quote">
-            <blockquote id="radio-quote">
-                "Unless..."
-                <footer>— Griffin McElroy</footer>
-            </blockquote>
-        </div>
-    </section>
 </div>
-
-<style>
-    /* Loading Overlay Styles */
-    .loading-overlay {
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(255, 255, 255, 0.95);
-        backdrop-filter: blur(8px);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 1000;
-        border-radius: 12px;
-        transition:
-            opacity 0.5s ease,
-            visibility 0.5s ease;
-    }
-
-    .loading-overlay.hidden {
-        opacity: 0;
-        visibility: hidden;
-        pointer-events: none;
-    }
-
-    .loading-content {
-        text-align: center;
-        max-width: 300px;
-    }
-
-    .loading-spinner {
-        position: relative;
-        width: 80px;
-        height: 80px;
-        margin: 0 auto 20px;
-    }
-
-    .spinner-ring {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        border: 3px solid transparent;
-        border-top-color: #5e60ce;
-        border-radius: 50%;
-        animation: spin 1.5s linear infinite;
-    }
-
-    .spinner-ring:nth-child(2) {
-        width: 60px;
-        height: 60px;
-        top: 10px;
-        left: 10px;
-        border-top-color: #64dfdf;
-        animation-duration: 2s;
-        animation-direction: reverse;
-    }
-
-    .spinner-ring:nth-child(3) {
-        width: 40px;
-        height: 40px;
-        top: 20px;
-        left: 20px;
-        border-top-color: #ff7c7c;
-        animation-duration: 1s;
-    }
-
-    @keyframes spin {
-        0% {
-            transform: rotate(0deg);
-        }
-        100% {
-            transform: rotate(360deg);
-        }
-    }
-
-    .loading-content h3 {
-        color: #5e60ce;
-        margin-bottom: 10px;
-        font-size: 1.2rem;
-    }
-
-    .loading-content p {
-        color: #666;
-        font-size: 0.9rem;
-        margin: 0;
-    }
-
-    /* Player Controls Enhancement */
-    .player-section {
-        position: relative;
-        overflow: hidden;
-    }
-
-    .control-btn:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-        pointer-events: none;
-    }
-
-    .volume-slider:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
-
-    /* Loading state for buttons */
-    .control-btn.loading {
-        opacity: 0.7;
-        position: relative;
-    }
-
-    .control-btn.loading::after {
-        content: "";
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        width: 20px;
-        height: 20px;
-        margin: -10px 0 0 -10px;
-        border: 2px solid transparent;
-        border-top-color: currentColor;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-    }
-
-    .control-btn.loading i {
-        opacity: 0;
-    }
-
-    /* Stream status indicator */
-    .stream-status {
-        position: absolute;
-        top: 15px;
-        right: 15px;
-        background: rgba(94, 96, 206, 0.1);
-        color: #5e60ce;
-        padding: 5px 10px;
-        border-radius: 15px;
-        font-size: 0.8rem;
-        font-weight: 600;
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        transition: all 0.3s ease;
-    }
-
-    .stream-status.connecting {
-        background: rgba(255, 193, 7, 0.1);
-        color: #856404;
-    }
-
-    .stream-status.error {
-        background: rgba(220, 53, 69, 0.1);
-        color: #721c24;
-    }
-
-    .stream-status.ready {
-        background: rgba(40, 167, 69, 0.1);
-        color: #155724;
-    }
-
-    .status-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: currentColor;
-        animation: pulse 2s infinite;
-    }
-
-    @keyframes pulse {
-        0%,
-        100% {
-            opacity: 1;
-        }
-        50% {
-            opacity: 0.5;
-        }
-    }
-
-    /* Responsive adjustments */
-    @media (max-width: 768px) {
-        .loading-content h3 {
-            font-size: 1.1rem;
-        }
-
-        .loading-spinner {
-            width: 60px;
-            height: 60px;
-        }
-
-        .spinner-ring:nth-child(2) {
-            width: 45px;
-            height: 45px;
-            top: 7.5px;
-            left: 7.5px;
-        }
-
-        .spinner-ring:nth-child(3) {
-            width: 30px;
-            height: 30px;
-            top: 15px;
-            left: 15px;
-        }
-    }
-</style>
 {{ end }}
