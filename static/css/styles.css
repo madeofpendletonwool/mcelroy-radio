@@ -390,11 +390,21 @@ nav ul li a:hover {
 }
 
 /* Player controls */
+.player-controls-row {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    flex: 1;
+    justify-content: flex-end;
+    flex-direction: row;
+}
+
 .player-controls {
     display: flex;
     align-items: center;
     gap: 8px;
     flex: 0 0 auto;
+    flex-direction: row;
 }
 
 .control-btn {
@@ -475,22 +485,26 @@ nav ul li a:hover {
     align-items: center;
     gap: 8px;
     position: relative;
+    flex: 0 0 auto;
 }
 
 .volume-slider-container {
     position: absolute;
-    bottom: 100%;
+    bottom: 150%;
     right: 0;
     background-color: var(--surface-color);
     border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 15px 10px;
+    border-radius: 20px;
+    padding: 15px 12px;
     box-shadow: var(--shadow);
     margin-bottom: 10px;
     opacity: 0;
     visibility: hidden;
     transform: translateY(10px);
     transition: all 0.3s ease;
+    width: 60px;
+    display: flex;
+    justify-content: center;
 }
 
 .volume-slider-container.show {
@@ -503,12 +517,13 @@ nav ul li a:hover {
     width: 80px;
     height: 80px;
     -webkit-appearance: slider-vertical;
-    writing-mode: bt-lr; /* IE */
-    -webkit-writing-mode: vertical-lr; /* WebKit */
-    writing-mode: vertical-lr;
+    writing-mode: bt-rl; /* IE */
+    -webkit-writing-mode: vertical-rl; /* WebKit */
+    writing-mode: vertical-rl;
     background: var(--border-color);
     outline: none;
     border-radius: 4px;
+    transform: rotate(180deg);
 }
 
 .volume-slider::-webkit-slider-thumb {
@@ -1009,10 +1024,6 @@ nav ul li a:hover {
 
 .show-image.kind-rewind {
     background-image: url("/static/images/shows/kind-rewind.jpg");
-}
-
-.show-image.can-i-pet-your-dog {
-    background-image: url("/static/images/shows/can-i-pet-your-dog.jpg");
 }
 
 .show-image.empty-bowl {

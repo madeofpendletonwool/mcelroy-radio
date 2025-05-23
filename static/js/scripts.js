@@ -582,8 +582,21 @@ class GlobalRadioPlayer {
     }
 
     // Progress bar clicking
+
+    // Progress bar clicking
     if (this.progressBar) {
       this.progressBar.addEventListener("click", (e) => this.seekToPosition(e));
+    } else {
+      // Try to find the progress bar as the top-level progress element
+      const topProgressBar = document.querySelector(".player-progress");
+      if (topProgressBar) {
+        this.progressBar = topProgressBar;
+        this.progress =
+          topProgressBar.querySelector(".progress") || this.progress;
+        this.progressBar.addEventListener("click", (e) =>
+          this.seekToPosition(e),
+        );
+      }
     }
 
     // Close volume slider when clicking outside
