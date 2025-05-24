@@ -218,6 +218,32 @@
         display: flex !important;
     }
 
+    /* Station switching animations */
+    .station-card.switching-out {
+        opacity: 0.5;
+        transform: scale(0.95);
+        border-color: var(--text-muted);
+        transition: all 0.3s ease;
+    }
+
+    .station-card.switching-in {
+        border-color: var(--primary-color);
+        box-shadow: 0 0 20px rgba(94, 96, 206, 0.3);
+        animation: station-switching 1.5s ease-in-out infinite;
+    }
+
+    @keyframes station-switching {
+        0%,
+        100% {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 20px rgba(94, 96, 206, 0.3);
+        }
+        50% {
+            border-color: var(--secondary-color);
+            box-shadow: 0 0 25px rgba(100, 223, 223, 0.4);
+        }
+    }
+
     .station-header {
         display: flex;
         align-items: center;

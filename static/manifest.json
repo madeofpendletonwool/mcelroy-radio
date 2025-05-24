@@ -1,0 +1,17 @@
+{
+  "name": "McElroy Radio",
+  "short_name": "McElroy Radio",
+  "description": "24/7 internet radio station playing McElroy family podcasts - where the goofs never end!",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#5e60ce",
+  "icons": [
+    {
+      "src": "/static/img/radio.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

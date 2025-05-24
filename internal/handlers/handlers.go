@@ -694,9 +694,20 @@ func (h *Handler) ServeManifest(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(manifest))
 }
 
-// NowPlaying returns information about the currently playing episode
+// Updated NowPlaying handler in handlers.go
 func (h *Handler) NowPlaying(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+
+	// Check if this is a forced refresh (from station switching)
+	forceRefresh := r.URL.Query().Get("force") != ""
+
+	if forceRefresh {
+		// Add no-cache headers for forced refresh
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
+		log.Printf("NowPlaying: Force refresh requested")
+	}
 
 	h.mu.RLock()
 	currentEpisode := h.stationManager.GetCurrentEpisode()
@@ -732,6 +743,15 @@ func (h *Handler) NowPlaying(w http.ResponseWriter, r *http.Request) {
 		"time_position":    h.stationManager.GetCurrentTimePosition(),
 		"is_playing":       streamInfo["is_playing"],
 		"listener_count":   h.player.GetListenerCount(),
+
+		// Add station info for debugging
+		"station_id": h.stationManager.GetCurrentStationID(),
+		"timestamp":  time.Now().Unix(),
+	}
+
+	if forceRefresh {
+		log.Printf("NowPlaying: Serving fresh episode data - %s (%s)",
+			currentEpisode.Title, currentEpisode.ShowName)
 	}
 
 	json.NewEncoder(w).Encode(response)
