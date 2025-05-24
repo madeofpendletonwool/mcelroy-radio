@@ -38,35 +38,37 @@ func New(cfg *config.Config) (*http.Server, error) {
 	// Routes
 	r.Get("/", h.HomePage)
 	r.Get("/about", h.AboutPage)
+	r.Get("/directory", h.DirectoryPage)
+
+	// Core streaming route - now supports ?station= parameter
 	r.Get("/stream", h.StreamAudio)
+
+	// API routes - all now support ?station= parameter
 	r.Get("/now-playing", h.NowPlaying)
 	r.Get("/recent", h.RecentlyPlayed)
-	r.Get("/random-fact", h.RandomFact)
-	r.Get("/directory", h.DirectoryPage)
 	r.Get("/stream-position", h.StreamPosition)
 
 	// Station routes
 	r.Get("/stations", h.StationList)
-	r.Post("/switch-station", h.SwitchStation)
 	r.Get("/station-info", h.StationInfo)
+	// REMOVED: r.Post("/switch-station", h.SwitchStation) - no more server-side switching!
 
-	// Add these routes with the others
+	// Utility routes
+	r.Get("/random-fact", h.RandomFact)
+	r.Get("/download-episode", h.DownloadEpisode)
+	r.Get("/episode-details", h.EpisodeDetails)
+
+	// Analytics routes
 	r.Get("/analytics", h.AnalyticsPage)
 	r.Get("/analytics-api", h.AnalyticsAPI)
-	r.Get("/manifest.json", h.ServeManifest)
-
-	r.Get("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, filepath.Join(cfg.StaticDir, "img", "favicon.ico"))
-	})
-
-	// Add the missing download route
-	r.Get("/download-episode", h.DownloadEpisode)
-
-	// Add episode details route for the directory
-	r.Get("/episode-details", h.EpisodeDetails)
 
 	// PWA support
 	r.Get("/manifest.json", h.ServeManifest)
+
+	// Favicon
+	r.Get("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, filepath.Join(cfg.StaticDir, "img", "favicon.ico"))
+	})
 
 	// Static file server
 	log.Printf("Serving static files from: %s", cfg.StaticDir)
