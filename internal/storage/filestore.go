@@ -1,10 +1,15 @@
 package storage
 
 import (
+	"crypto/md5"
+	"encoding/json"
+	"fmt"
+	"io/ioutil"
 	"log"
 	"math/rand"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -12,31 +17,198 @@ import (
 	"github.com/madeofpendletonwool/mcelroy-radio/internal/models"
 )
 
-// FileStore manages audio file discovery and tracking
+// CachedEpisodeData represents the cached metadata for an episode
+type CachedEpisodeData struct {
+	FilePath    string    `json:"file_path"`
+	FileSize    int64     `json:"file_size"`
+	ModTime     time.Time `json:"mod_time"`
+	Title       string    `json:"title"`
+	ShowName    string    `json:"show_name"`
+	Artist      string    `json:"artist"`
+	Album       string    `json:"album"`
+	Genre       string    `json:"genre"`
+	Duration    float64   `json:"duration"`
+	ImagePath   string    `json:"image_path"`
+	PublishedAt time.Time `json:"published_at"`
+	CachedAt    time.Time `json:"cached_at"`
+}
+
+// MetadataCache manages the episode metadata cache
+type MetadataCache struct {
+	cachePath string
+	cache     map[string]*CachedEpisodeData
+	mutex     sync.RWMutex
+}
+
+// NewMetadataCache creates a new metadata cache
+func NewMetadataCache(cacheDir string) *MetadataCache {
+	cachePath := filepath.Join(cacheDir, "episode_metadata.json")
+
+	cache := &MetadataCache{
+		cachePath: cachePath,
+		cache:     make(map[string]*CachedEpisodeData),
+	}
+
+	// Load existing cache
+	cache.loadCache()
+
+	return cache
+}
+
+// loadCache loads the cache from disk
+func (mc *MetadataCache) loadCache() {
+	mc.mutex.Lock()
+	defer mc.mutex.Unlock()
+
+	if _, err := os.Stat(mc.cachePath); os.IsNotExist(err) {
+		log.Printf("No metadata cache found at %s, starting fresh", mc.cachePath)
+		return
+	}
+
+	data, err := ioutil.ReadFile(mc.cachePath)
+	if err != nil {
+		log.Printf("Error reading metadata cache: %v", err)
+		return
+	}
+
+	if err := json.Unmarshal(data, &mc.cache); err != nil {
+		log.Printf("Error parsing metadata cache: %v", err)
+		// Start fresh if cache is corrupted
+		mc.cache = make(map[string]*CachedEpisodeData)
+		return
+	}
+
+	log.Printf("Loaded metadata cache with %d entries", len(mc.cache))
+}
+
+// saveCache saves the cache to disk
+func (mc *MetadataCache) saveCache() error {
+	mc.mutex.RLock()
+	defer mc.mutex.RUnlock()
+
+	// Ensure cache directory exists
+	if err := os.MkdirAll(filepath.Dir(mc.cachePath), 0755); err != nil {
+		return fmt.Errorf("failed to create cache directory: %v", err)
+	}
+
+	data, err := json.MarshalIndent(mc.cache, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal cache: %v", err)
+	}
+
+	if err := ioutil.WriteFile(mc.cachePath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write cache file: %v", err)
+	}
+
+	return nil
+}
+
+// getCacheKey generates a unique key for a file
+func (mc *MetadataCache) getCacheKey(filePath string) string {
+	hash := md5.Sum([]byte(filePath))
+	return fmt.Sprintf("%x", hash)
+}
+
+// isFileCached checks if a file is cached and up-to-date
+func (mc *MetadataCache) isFileCached(filePath string, fileInfo os.FileInfo) bool {
+	mc.mutex.RLock()
+	defer mc.mutex.RUnlock()
+
+	key := mc.getCacheKey(filePath)
+	cached, exists := mc.cache[key]
+
+	if !exists {
+		return false
+	}
+
+	// Check if file has been modified since caching
+	if cached.FileSize != fileInfo.Size() || !cached.ModTime.Equal(fileInfo.ModTime()) {
+		return false
+	}
+
+	return true
+}
+
+// getCachedEpisode retrieves a cached episode
+func (mc *MetadataCache) getCachedEpisode(filePath string) *models.Episode {
+	mc.mutex.RLock()
+	defer mc.mutex.RUnlock()
+
+	key := mc.getCacheKey(filePath)
+	cached, exists := mc.cache[key]
+
+	if !exists {
+		return nil
+	}
+
+	return &models.Episode{
+		ID:          filePath,
+		Title:       cached.Title,
+		ShowName:    cached.ShowName,
+		Artist:      cached.Artist,
+		Album:       cached.Album,
+		Genre:       cached.Genre,
+		AudioPath:   filePath,
+		ImagePath:   cached.ImagePath,
+		Duration:    cached.Duration,
+		FileSize:    cached.FileSize,
+		PublishedAt: cached.PublishedAt,
+		RandomFact:  models.GetRandomFact(),
+	}
+}
+
+// cacheEpisode stores an episode in the cache
+func (mc *MetadataCache) cacheEpisode(episode *models.Episode, fileInfo os.FileInfo) {
+	mc.mutex.Lock()
+	defer mc.mutex.Unlock()
+
+	key := mc.getCacheKey(episode.AudioPath)
+	mc.cache[key] = &CachedEpisodeData{
+		FilePath:    episode.AudioPath,
+		FileSize:    fileInfo.Size(),
+		ModTime:     fileInfo.ModTime(),
+		Title:       episode.Title,
+		ShowName:    episode.ShowName,
+		Artist:      episode.Artist,
+		Album:       episode.Album,
+		Genre:       episode.Genre,
+		Duration:    episode.Duration,
+		ImagePath:   episode.ImagePath,
+		PublishedAt: episode.PublishedAt,
+		CachedAt:    time.Now(),
+	}
+}
+
+// FileStore manages audio file discovery and tracking with caching
 type FileStore struct {
 	ContentDirs     []string
 	Episodes        []*models.Episode
 	CurrentEpisode  *models.Episode
 	RecentlyPlayed  []*models.Episode
-	PlayedEpisodes  map[string]bool // Track which episodes we've played in this cycle
+	PlayedEpisodes  map[string]bool
 	episodesMutex   sync.RWMutex
 	refreshInterval time.Duration
 	rng             *rand.Rand
+	metadataCache   *MetadataCache
 }
 
-// NewFileStore creates a new file store and starts content discovery
+// NewFileStore creates a new file store with metadata caching
 func NewFileStore(contentDirs []string) (*FileStore, error) {
-	// Create a new random source with current time as seed
 	source := rand.NewSource(time.Now().UnixNano())
 	rng := rand.New(source)
+
+	// Initialize metadata cache
+	cacheDir := "/opt/mcelroy-content/cache"
+	metadataCache := NewMetadataCache(cacheDir)
 
 	fs := &FileStore{
 		ContentDirs:     contentDirs,
 		Episodes:        make([]*models.Episode, 0),
 		RecentlyPlayed:  make([]*models.Episode, 0),
 		PlayedEpisodes:  make(map[string]bool),
-		refreshInterval: 5 * time.Minute,
+		refreshInterval: 15 * time.Minute, // Increased since we have caching now
 		rng:             rng,
+		metadataCache:   metadataCache,
 	}
 
 	// Initial scan
@@ -50,97 +222,176 @@ func NewFileStore(contentDirs []string) (*FileStore, error) {
 	return fs, nil
 }
 
-// ScanContent scans the content directories for audio files
+// ScanContent scans directories with intelligent caching
 func (fs *FileStore) ScanContent() error {
-	log.Println("Scanning content directories for audio files...")
+	log.Println("Starting cached content scan...")
+	startTime := time.Now()
 
-	var episodes []*models.Episode
-	episodeCount := 0
+	var allEpisodes []*models.Episode
+	var newFiles []FileJob
+	cacheHits := 0
+	totalFiles := 0
 
+	// First pass: check what's cached vs what needs scanning
 	for _, dir := range fs.ContentDirs {
 		showName := filepath.Base(dir)
-		log.Printf("Scanning directory: %s (show: %s)", dir, showName)
+		log.Printf("Checking directory: %s", dir)
 
 		err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
-				log.Printf("Error accessing path %s: %v", path, err)
-				return err
+				log.Printf("Warning: Error accessing path %s: %v", path, err)
+				return nil
 			}
 
-			// Skip directories
 			if info.IsDir() {
 				return nil
 			}
 
-			// Check if file is an audio file
+			// Check if it's an audio file
 			ext := strings.ToLower(filepath.Ext(path))
-			if ext == ".mp3" || ext == ".m4a" || ext == ".ogg" || ext == ".wav" {
-				episode := models.NewEpisodeFromFile(path, showName)
-				episodes = append(episodes, episode)
-				episodeCount++
-				log.Printf("Found episode: %s", episode.Title)
+			audioExtensions := map[string]bool{
+				".mp3": true, ".m4a": true, ".ogg": true,
+				".wav": true, ".flac": true, ".aac": true,
 			}
+
+			if !audioExtensions[ext] {
+				return nil
+			}
+
+			totalFiles++
+
+			// Check if cached and up-to-date
+			if fs.metadataCache.isFileCached(path, info) {
+				if episode := fs.metadataCache.getCachedEpisode(path); episode != nil {
+					allEpisodes = append(allEpisodes, episode)
+					cacheHits++
+					return nil
+				}
+			}
+
+			// Not cached or needs updating
+			newFiles = append(newFiles, FileJob{
+				Path:     path,
+				ShowName: showName,
+				FileInfo: info,
+			})
 
 			return nil
 		})
 
 		if err != nil {
 			log.Printf("Error scanning directory %s: %v", dir, err)
-			return err
 		}
 	}
 
-	log.Printf("Found %d total episodes across all directories", episodeCount)
+	log.Printf("Cache analysis: %d cached, %d need scanning, %d total files",
+		cacheHits, len(newFiles), totalFiles)
 
-	// Update episodes with lock
+	// Second pass: process uncached files
+	if len(newFiles) > 0 {
+		log.Printf("Processing %d uncached files with parallel workers...", len(newFiles))
+		newEpisodes := fs.processUncachedFiles(newFiles)
+		allEpisodes = append(allEpisodes, newEpisodes...)
+
+		// Save cache after processing new files
+		if err := fs.metadataCache.saveCache(); err != nil {
+			log.Printf("Warning: Failed to save metadata cache: %v", err)
+		} else {
+			log.Printf("Saved metadata cache with %d new entries", len(newFiles))
+		}
+	}
+
+	scanDuration := time.Since(startTime)
+	log.Printf("Scan completed! Found %d episodes in %v (%.1f%% cache hit rate)",
+		len(allEpisodes), scanDuration, float64(cacheHits)/float64(totalFiles)*100)
+
+	// Update episodes
 	fs.episodesMutex.Lock()
 	defer fs.episodesMutex.Unlock()
 
-	// Check if we found new episodes
 	oldCount := len(fs.Episodes)
-	newEpisodes := fs.findNewEpisodes(episodes)
+	newEpisodesFound := len(allEpisodes) - oldCount
 
-	fs.Episodes = episodes
+	fs.Episodes = allEpisodes
 
-	// If we don't have a current episode yet and we found some episodes, pick one randomly
-	if fs.CurrentEpisode == nil && len(episodes) > 0 {
-		randomIndex := fs.rng.Intn(len(episodes))
-		fs.CurrentEpisode = episodes[randomIndex]
+	// Set initial current episode if needed
+	if fs.CurrentEpisode == nil && len(allEpisodes) > 0 {
+		randomIndex := fs.rng.Intn(len(allEpisodes))
+		fs.CurrentEpisode = allEpisodes[randomIndex]
 		fs.CurrentEpisode.PlayedAt = time.Now()
 		fs.PlayedEpisodes[fs.CurrentEpisode.ID] = true
 		log.Printf("Selected random starting episode: %s", fs.CurrentEpisode.Title)
 	}
 
-	// Log new episodes found
-	if len(newEpisodes) > 0 {
-		log.Printf("Detected %d new episodes:", len(newEpisodes))
-		for _, ep := range newEpisodes {
-			log.Printf("  - %s", ep.Title)
-		}
-	} else if oldCount > 0 {
-		log.Printf("No new episodes detected (still have %d episodes)", len(episodes))
+	if newEpisodesFound > 0 {
+		log.Printf("Found %d new episodes", newEpisodesFound)
 	}
 
 	return nil
 }
 
-// findNewEpisodes compares current episodes with new scan results
-func (fs *FileStore) findNewEpisodes(newEpisodes []*models.Episode) []*models.Episode {
-	// Create a map of existing episodes by ID for quick lookup
-	existingEpisodes := make(map[string]bool)
-	for _, ep := range fs.Episodes {
-		existingEpisodes[ep.ID] = true
+// FileJob represents a file processing job
+type FileJob struct {
+	Path     string
+	ShowName string
+	FileInfo os.FileInfo
+}
+
+// processUncachedFiles processes files that aren't cached using parallel workers
+func (fs *FileStore) processUncachedFiles(jobs []FileJob) []*models.Episode {
+	numWorkers := runtime.NumCPU()
+	if numWorkers > 6 {
+		numWorkers = 6 // Don't overwhelm ffprobe
 	}
 
-	// Find episodes that are in newEpisodes but not in existing
-	var newlyFound []*models.Episode
-	for _, ep := range newEpisodes {
-		if !existingEpisodes[ep.ID] {
-			newlyFound = append(newlyFound, ep)
+	jobChan := make(chan FileJob, len(jobs))
+	resultChan := make(chan *models.Episode, len(jobs))
+
+	// Start workers
+	var wg sync.WaitGroup
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for job := range jobChan {
+				episode := models.NewEpisodeFromFile(job.Path, job.ShowName)
+				if episode != nil {
+					// Cache the episode
+					fs.metadataCache.cacheEpisode(episode, job.FileInfo)
+					resultChan <- episode
+				}
+			}
+		}(i)
+	}
+
+	// Send jobs
+	go func() {
+		defer close(jobChan)
+		for _, job := range jobs {
+			jobChan <- job
+		}
+	}()
+
+	// Wait for workers and close result channel
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	// Collect results
+	var episodes []*models.Episode
+	processed := 0
+	for episode := range resultChan {
+		episodes = append(episodes, episode)
+		processed++
+
+		// Log progress for long operations
+		if processed%50 == 0 {
+			log.Printf("Processed %d/%d uncached files...", processed, len(jobs))
 		}
 	}
 
-	return newlyFound
+	return episodes
 }
 
 // backgroundScanner periodically checks for new content
@@ -159,14 +410,15 @@ func (fs *FileStore) backgroundScanner() {
 	}
 }
 
-// GetCurrentEpisode returns the currently playing episode
+// Rest of the FileStore methods remain the same...
+// GetCurrentEpisode, AdvanceToNextEpisode, GetRecentlyPlayed, etc.
+
 func (fs *FileStore) GetCurrentEpisode() *models.Episode {
 	fs.episodesMutex.RLock()
 	defer fs.episodesMutex.RUnlock()
 	return fs.CurrentEpisode
 }
 
-// AdvanceToNextEpisode changes to the next episode randomly
 func (fs *FileStore) AdvanceToNextEpisode() *models.Episode {
 	fs.episodesMutex.Lock()
 	defer fs.episodesMutex.Unlock()
@@ -178,19 +430,15 @@ func (fs *FileStore) AdvanceToNextEpisode() *models.Episode {
 
 	// Add current episode to recently played
 	if fs.CurrentEpisode != nil {
-		// Update play time
 		fs.CurrentEpisode.PlayedAt = time.Now()
-
-		// Add to recently played, keeping only last 10
 		fs.RecentlyPlayed = append([]*models.Episode{fs.CurrentEpisode}, fs.RecentlyPlayed...)
 		if len(fs.RecentlyPlayed) > 10 {
 			fs.RecentlyPlayed = fs.RecentlyPlayed[:10]
 		}
-
 		log.Printf("Finished playing: %s", fs.CurrentEpisode.Title)
 	}
 
-	// Get list of unplayed episodes
+	// Get unplayed episodes
 	var unplayedEpisodes []*models.Episode
 	for _, episode := range fs.Episodes {
 		if !fs.PlayedEpisodes[episode.ID] {
@@ -198,52 +446,42 @@ func (fs *FileStore) AdvanceToNextEpisode() *models.Episode {
 		}
 	}
 
-	// If we've played all episodes, reset the cycle and start over
+	// Reset cycle if all played
 	if len(unplayedEpisodes) == 0 {
-		log.Println("Completed full episode cycle! Starting over with all episodes...")
-		fs.PlayedEpisodes = make(map[string]bool) // Reset played episodes
-		unplayedEpisodes = fs.Episodes            // All episodes are now available again
+		log.Println("Completed full episode cycle! Starting over...")
+		fs.PlayedEpisodes = make(map[string]bool)
+		unplayedEpisodes = fs.Episodes
 	}
 
-	// Select a random episode from unplayed episodes
+	// Select random episode
 	randomIndex := fs.rng.Intn(len(unplayedEpisodes))
 	fs.CurrentEpisode = unplayedEpisodes[randomIndex]
-
-	// Mark as played
 	fs.PlayedEpisodes[fs.CurrentEpisode.ID] = true
-
-	// Update with a new random fact
 	fs.CurrentEpisode.RandomFact = models.GetRandomFact()
 
-	log.Printf("Selected next random episode: %s (%d unplayed episodes remaining)",
+	log.Printf("Selected next episode: %s (%d unplayed remaining)",
 		fs.CurrentEpisode.Title, len(unplayedEpisodes)-1)
 
 	return fs.CurrentEpisode
 }
 
-// GetRecentlyPlayed returns the recently played episodes
 func (fs *FileStore) GetRecentlyPlayed() []*models.Episode {
 	fs.episodesMutex.RLock()
 	defer fs.episodesMutex.RUnlock()
 	return fs.RecentlyPlayed
 }
 
-// GetAllEpisodes returns all discovered episodes
 func (fs *FileStore) GetAllEpisodes() []*models.Episode {
 	fs.episodesMutex.RLock()
 	defer fs.episodesMutex.RUnlock()
-
-	// Return a copy to avoid race conditions
 	episodes := make([]*models.Episode, len(fs.Episodes))
 	copy(episodes, fs.Episodes)
 	return episodes
 }
 
-// GetEpisodeByID returns a specific episode by its ID (file path)
 func (fs *FileStore) GetEpisodeByID(id string) *models.Episode {
 	fs.episodesMutex.RLock()
 	defer fs.episodesMutex.RUnlock()
-
 	for _, episode := range fs.Episodes {
 		if episode.ID == id {
 			return episode
@@ -252,11 +490,9 @@ func (fs *FileStore) GetEpisodeByID(id string) *models.Episode {
 	return nil
 }
 
-// GetEpisodesByShow returns all episodes for a specific show
 func (fs *FileStore) GetEpisodesByShow(showName string) []*models.Episode {
 	fs.episodesMutex.RLock()
 	defer fs.episodesMutex.RUnlock()
-
 	var episodes []*models.Episode
 	for _, episode := range fs.Episodes {
 		if episode.ShowName == showName {
@@ -266,7 +502,6 @@ func (fs *FileStore) GetEpisodesByShow(showName string) []*models.Episode {
 	return episodes
 }
 
-// GetPlaybackStats returns information about the current playback cycle
 func (fs *FileStore) GetPlaybackStats() map[string]interface{} {
 	fs.episodesMutex.RLock()
 	defer fs.episodesMutex.RUnlock()
