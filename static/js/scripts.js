@@ -96,8 +96,13 @@ class GlobalRadioPlayer {
     this.audioPlayer.preload = "auto";
     this.audioPlayer.style.display = "none";
 
+    // IMPORTANT: Set a data attribute so we can find it later
+    this.audioPlayer.dataset.globalPlayer = "true";
+
     // Append to body so it persists across navigation
     document.body.appendChild(this.audioPlayer);
+
+    console.log("🎵 Created and appended new audio element:", this.audioPlayer);
   }
 
   bindElements() {
@@ -324,6 +329,29 @@ class GlobalRadioPlayer {
     }
   }
 
+  debugAudioPlayerState() {
+    console.log("🎵 Audio Player Debug State:", {
+      audioPlayerExists: !!this.audioPlayer,
+      audioPlayerType: this.audioPlayer
+        ? this.audioPlayer.constructor.name
+        : "none",
+      audioPlayerSrc: this.audioPlayer ? this.audioPlayer.src : "none",
+      audioPlayerPaused: this.audioPlayer ? this.audioPlayer.paused : "unknown",
+      audioPlayerCurrentTime: this.audioPlayer
+        ? this.audioPlayer.currentTime
+        : "unknown",
+      audioPlayerDuration: this.audioPlayer
+        ? this.audioPlayer.duration
+        : "unknown",
+      domAudioElements: document.querySelectorAll("audio").length,
+      persistentAudioExists: !!document.getElementById(
+        "persistent-global-audio",
+      ),
+      globalPlayerBarExists: !!document.getElementById("global-player-bar"),
+    });
+  }
+
+  // Add this method to your GlobalRadioPlayer class:
   bindPageSpecificElements() {
     console.log("🔧 Binding page-specific elements...");
 
@@ -346,7 +374,17 @@ class GlobalRadioPlayer {
     // Station Manager initialization for home page
     if (document.getElementById("stations-grid")) {
       console.log("🎵 Home page detected, initializing station manager");
+
+      // IMPORTANT: Make sure we pass the correct reference and validate it
+      console.log("🎵 Current global player reference:", {
+        exists: !!this,
+        type: this.constructor.name,
+        hasAudio: !!this.audioPlayer,
+        hasInitAudio: !!(typeof this.initializeAudio === "function"),
+      });
+
       if (!this.stationManager) {
+        // Pass 'this' which is the GlobalRadioPlayer instance
         this.stationManager = new StationManager(this);
       }
       this.stationManager.init();
@@ -1065,9 +1103,160 @@ class GlobalRadioPlayer {
     }, 30000);
   }
 
+  fastSwitchToStation(stationId) {
+    console.log("🎵 FAST switching to station:", stationId);
+
+    // Skip the server call and just update the stream directly
+    this.currentStationId = stationId;
+    this.renderStations();
+
+    if (this.globalRadioPlayer && this.globalRadioPlayer.showNotification) {
+      this.globalRadioPlayer.showNotification(
+        `Tuning to ${this.getStationName(stationId)}...`,
+        "info",
+      );
+    }
+
+    // Get audio player and switch immediately
+    const audioPlayer = this.getAudioPlayer();
+    if (!audioPlayer) {
+      console.error("🎵 No audio player for fast switch");
+      return;
+    }
+
+    const wasPlaying = !audioPlayer.paused;
+    const streamUrl = `/stream?t=${Date.now()}&station=${stationId}`;
+
+    // Immediate switch
+    audioPlayer.src = streamUrl;
+
+    if (wasPlaying) {
+      // Try to resume immediately
+      setTimeout(() => {
+        audioPlayer
+          .play()
+          .then(() => {
+            console.log("🎵 Fast switch successful");
+            if (
+              this.globalRadioPlayer &&
+              this.globalRadioPlayer.showNotification
+            ) {
+              this.globalRadioPlayer.showNotification(
+                `Now playing: ${this.getStationName(stationId)}`,
+                "success",
+              );
+            }
+          })
+          .catch(() => {
+            console.log("🎵 Fast switch needs manual play");
+            if (
+              this.globalRadioPlayer &&
+              this.globalRadioPlayer.showNotification
+            ) {
+              this.globalRadioPlayer.showNotification(
+                "Station switched! Click play to resume.",
+                "info",
+              );
+            }
+          });
+      }, 500);
+    }
+
+    // Quick episode check
+    setTimeout(() => {
+      if (
+        this.globalRadioPlayer &&
+        typeof this.globalRadioPlayer.checkForNewEpisode === "function"
+      ) {
+        this.globalRadioPlayer.checkForNewEpisode();
+      }
+    }, 1000);
+
+    // Update server in background (non-blocking)
+    fetch(`/switch-station?id=${stationId}`, { method: "POST" })
+      .then((response) => response.json())
+      .then((data) => console.log("🎵 Background server update:", data))
+      .catch((err) => console.log("🎵 Background server update failed:", err));
+  }
+
+  fallbackToSimpleStreamSwitch(streamUrl, wasPlaying) {
+    console.log("🎵 Using fast simple stream switch fallback");
+
+    const audioPlayer = this.getAudioPlayer();
+    if (!audioPlayer) {
+      this.fallbackToPageReload();
+      return;
+    }
+
+    // Simple approach: just set source and play if needed
+    audioPlayer.src = streamUrl;
+
+    // Start checking episode info immediately in parallel
+    if (
+      this.globalRadioPlayer &&
+      typeof this.globalRadioPlayer.checkForNewEpisode === "function"
+    ) {
+      console.log("🎵 Starting immediate episode check in fallback");
+      this.globalRadioPlayer.checkForNewEpisode();
+    }
+
+    if (wasPlaying) {
+      // Much shorter delay - just 1 second
+      setTimeout(() => {
+        const playPromise = audioPlayer.play();
+        if (playPromise) {
+          playPromise
+            .then(() => {
+              console.log("🎵 Fast fallback playback successful");
+              if (
+                this.globalRadioPlayer &&
+                this.globalRadioPlayer.showNotification
+              ) {
+                this.globalRadioPlayer.showNotification(
+                  "Station switched successfully!",
+                  "success",
+                );
+              }
+            })
+            .catch((error) => {
+              console.log("🎵 Fast fallback playback failed:", error);
+              if (
+                this.globalRadioPlayer &&
+                this.globalRadioPlayer.showNotification
+              ) {
+                this.globalRadioPlayer.showNotification(
+                  "Station switched! Click play to resume.",
+                  "info",
+                );
+              }
+            });
+        }
+      }, 1000); // Reduced from 2000 to 1000
+    }
+
+    // Quick follow-up episode check
+    setTimeout(() => {
+      if (
+        this.globalRadioPlayer &&
+        typeof this.globalRadioPlayer.checkForNewEpisode === "function"
+      ) {
+        console.log("🎵 Follow-up episode check");
+        this.globalRadioPlayer.checkForNewEpisode();
+      }
+    }, 1500); // Much shorter than before
+  }
+
   checkForNewEpisode() {
-    fetch("/now-playing")
+    // Add an abort controller for faster timeouts
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 second timeout
+
+    fetch("/now-playing", {
+      signal: controller.signal,
+      cache: "no-cache", // Ensure we get fresh data
+    })
       .then((response) => {
+        clearTimeout(timeoutId);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return response.json();
       })
@@ -1110,7 +1299,12 @@ class GlobalRadioPlayer {
         this.updateUIWithEpisodeData(data);
       })
       .catch((err) => {
-        console.error("Error checking for new episode:", err);
+        clearTimeout(timeoutId);
+        if (err.name === "AbortError") {
+          console.log("Episode check timed out (3s) - continuing anyway");
+        } else {
+          console.error("Error checking for new episode:", err);
+        }
       });
   }
 
@@ -1538,6 +1732,7 @@ function updateQuoteBox() {
 // Global instance management
 let globalRadioPlayer = null;
 
+// FINALLY, update the initGlobalRadioPlayer function to ensure proper instance management:
 function initGlobalRadioPlayer() {
   console.log("🎵 Initializing Global Radio Player");
 
@@ -1555,7 +1750,7 @@ function initGlobalRadioPlayer() {
     globalRadioPlayer.syncUIWithAudioState();
     globalRadioPlayer.setStreamReady(true);
 
-    // Rebind page-specific elements
+    // Rebind page-specific elements - this is where StationManager gets created
     globalRadioPlayer.bindPageSpecificElements();
     return;
   }
@@ -1564,7 +1759,23 @@ function initGlobalRadioPlayer() {
   console.log("🎵 Creating new global player instance");
   globalRadioPlayer = new GlobalRadioPlayer();
   globalRadioPlayer.init();
+
+  // CRITICAL: Store the instance globally so it persists across page navigation
   window.globalRadioPlayer = globalRadioPlayer;
+
+  console.log("🎵 Global player instance stored:", {
+    stored: !!window.globalRadioPlayer,
+    type: window.globalRadioPlayer
+      ? window.globalRadioPlayer.constructor.name
+      : "none",
+    hasAudio: !!(
+      window.globalRadioPlayer && window.globalRadioPlayer.audioPlayer
+    ),
+    hasInitAudio: !!(
+      window.globalRadioPlayer &&
+      typeof window.globalRadioPlayer.initializeAudio === "function"
+    ),
+  });
 }
 
 // Legacy page-specific functionality
@@ -1616,7 +1827,6 @@ function updateRadioQuote() {
   radioQuote.innerHTML = `"${quote.text}"<footer>— ${quote.author}</footer>`;
 }
 
-// Station management JavaScript - Add this to scripts.js
 class StationManager {
   constructor(globalRadioPlayer) {
     this.globalRadioPlayer = globalRadioPlayer;
@@ -1625,7 +1835,19 @@ class StationManager {
     this.stationsGrid = null;
     this.currentStationName = null;
 
-    console.log("🎵 Station Manager created");
+    console.log("🎵 Station Manager created with player:", {
+      hasPlayer: !!this.globalRadioPlayer,
+      hasAudioPlayer: !!(
+        this.globalRadioPlayer && this.globalRadioPlayer.audioPlayer
+      ),
+      hasInitializeAudio: !!(
+        this.globalRadioPlayer &&
+        typeof this.globalRadioPlayer.initializeAudio === "function"
+      ),
+      playerType: this.globalRadioPlayer
+        ? this.globalRadioPlayer.constructor.name
+        : "none",
+    });
   }
 
   async init() {
@@ -1739,8 +1961,6 @@ class StationManager {
     return card;
   }
 
-  // Replace the switchToStation method in StationManager with this:
-
   async switchToStation(stationId) {
     try {
       console.log("🎵 Switching to station:", stationId);
@@ -1764,23 +1984,8 @@ class StationManager {
           );
         }
 
-        // Force refresh the entire stream and UI
-        if (this.globalRadioPlayer) {
-          console.log("🎵 Refreshing audio stream for new station");
-
-          // Stop current audio
-          if (this.globalRadioPlayer.audioPlayer) {
-            this.globalRadioPlayer.audioPlayer.pause();
-            this.globalRadioPlayer.audioPlayer.currentTime = 0;
-          }
-
-          // Wait a moment then reinitialize
-          setTimeout(() => {
-            this.globalRadioPlayer.initializeAudio();
-            // Also refresh the current episode info
-            this.globalRadioPlayer.checkForNewEpisode();
-          }, 1000);
-        }
+        // Refresh the audio stream for the new station
+        this.refreshAudioForNewStation();
       } else {
         const errorText = await response.text();
         throw new Error(
@@ -1795,6 +2000,240 @@ class StationManager {
           "error",
         );
       }
+    }
+  }
+
+  // Get the audio player with multiple fallback methods
+  getAudioPlayer() {
+    // Method 1: Direct reference from globalRadioPlayer
+    if (this.globalRadioPlayer && this.globalRadioPlayer.audioPlayer) {
+      return this.globalRadioPlayer.audioPlayer;
+    }
+
+    // Method 2: Look for the persistent audio element by ID
+    const persistentAudio = document.getElementById("persistent-global-audio");
+    if (persistentAudio) {
+      console.log("🎵 Found audio player via DOM ID");
+      return persistentAudio;
+    }
+
+    // Method 3: Look for any audio element in the global player bar
+    const playerBar = document.getElementById("global-player-bar");
+    if (playerBar) {
+      const audioInBar = playerBar.querySelector("audio");
+      if (audioInBar) {
+        console.log("🎵 Found audio player in player bar");
+        return audioInBar;
+      }
+    }
+
+    // Method 4: Look for any audio element in the document
+    const anyAudio = document.querySelector("audio");
+    if (anyAudio) {
+      console.log("🎵 Found audio player in document");
+      return anyAudio;
+    }
+
+    console.error("🎵 No audio player found anywhere!");
+    return null;
+  }
+
+  refreshAudioForNewStation() {
+    console.log("🎵 Refreshing audio for new station");
+
+    // Get the audio player using fallback methods
+    const audioPlayer = this.getAudioPlayer();
+
+    if (!audioPlayer) {
+      console.error(
+        "🎵 Could not find audio player, trying page reload approach",
+      );
+      this.fallbackToPageReload();
+      return;
+    }
+
+    console.log("🎵 Audio player found, refreshing stream...");
+
+    // Store current state
+    const wasPlaying = !audioPlayer.paused;
+    const currentVolume = audioPlayer.volume;
+    const currentMuted = audioPlayer.muted;
+
+    // Temporarily disable error logging for expected errors during stream switch
+    const originalErrorHandler = audioPlayer.onerror;
+    let switchingStream = true;
+
+    audioPlayer.onerror = (e) => {
+      if (switchingStream) {
+        console.log("🎵 Expected audio error during stream switch (ignoring)");
+        return; // Ignore errors during the switching process
+      }
+      // Call original error handler for real errors
+      if (originalErrorHandler) {
+        originalErrorHandler(e);
+      }
+    };
+
+    // Stop current playback gracefully
+    if (!audioPlayer.paused) {
+      audioPlayer.pause();
+    }
+    audioPlayer.currentTime = 0;
+
+    // Create new stream URL with timestamp and station to avoid caching
+    const streamUrl = `/stream?t=${Date.now()}&station=${this.currentStationId}`;
+    console.log("🎵 New stream URL:", streamUrl);
+
+    // OPTIMIZED: Immediately start checking for new episode info while audio loads
+    setTimeout(() => {
+      if (
+        this.globalRadioPlayer &&
+        typeof this.globalRadioPlayer.checkForNewEpisode === "function"
+      ) {
+        console.log("🎵 Starting early episode check");
+        this.globalRadioPlayer.checkForNewEpisode();
+      }
+    }, 500); // Start checking very early
+
+    // Set up success handlers before changing source
+    const onCanPlay = () => {
+      console.log("🎵 New station stream can play");
+      audioPlayer.removeEventListener("canplay", onCanPlay);
+      audioPlayer.removeEventListener("error", onError);
+      clearTimeout(timeoutId);
+
+      // Restore audio settings
+      audioPlayer.volume = currentVolume;
+      audioPlayer.muted = currentMuted;
+
+      // Re-enable normal error handling
+      switchingStream = false;
+      audioPlayer.onerror = originalErrorHandler;
+
+      console.log("🎵 New station stream ready");
+
+      // Try to resume playback if it was playing before
+      if (wasPlaying) {
+        const playPromise = audioPlayer.play();
+        if (playPromise) {
+          playPromise
+            .then(() => {
+              console.log("🎵 Resumed playback on new station");
+
+              // Immediate episode info update after successful playback
+              if (
+                this.globalRadioPlayer &&
+                typeof this.globalRadioPlayer.checkForNewEpisode === "function"
+              ) {
+                this.globalRadioPlayer.checkForNewEpisode();
+              }
+            })
+            .catch((error) => {
+              console.log("🎵 Could not auto-resume playback:", error);
+              if (
+                this.globalRadioPlayer &&
+                this.globalRadioPlayer.showNotification
+              ) {
+                this.globalRadioPlayer.showNotification(
+                  "Station switched! Click play to resume.",
+                  "info",
+                );
+              }
+            });
+        }
+      } else {
+        // Even if not playing, check for new episode info immediately
+        if (
+          this.globalRadioPlayer &&
+          typeof this.globalRadioPlayer.checkForNewEpisode === "function"
+        ) {
+          this.globalRadioPlayer.checkForNewEpisode();
+        }
+      }
+    };
+
+    const onError = () => {
+      if (!switchingStream) return; // Only handle errors during switching
+
+      console.log("🎵 Error loading new station stream, trying fallback");
+      audioPlayer.removeEventListener("canplay", onCanPlay);
+      audioPlayer.removeEventListener("error", onError);
+      clearTimeout(timeoutId);
+
+      // Re-enable normal error handling
+      switchingStream = false;
+      audioPlayer.onerror = originalErrorHandler;
+
+      // Try fallback approach immediately
+      this.fallbackToSimpleStreamSwitch(streamUrl, wasPlaying);
+    };
+
+    // Add event listeners - using canplay instead of loadedmetadata for faster response
+    audioPlayer.addEventListener("canplay", onCanPlay);
+    audioPlayer.addEventListener("error", onError);
+
+    // MUCH shorter timeout - 3 seconds instead of 10
+    const timeoutId = setTimeout(() => {
+      console.log("🎵 Station switch timeout (3s), trying fallback");
+      audioPlayer.removeEventListener("canplay", onCanPlay);
+      audioPlayer.removeEventListener("error", onError);
+      switchingStream = false;
+      audioPlayer.onerror = originalErrorHandler;
+
+      // Try the simple fallback
+      this.fallbackToSimpleStreamSwitch(streamUrl, wasPlaying);
+    }, 3000); // Reduced from 10000 to 3000
+
+    // Now set the new source
+    try {
+      audioPlayer.src = streamUrl;
+      audioPlayer.load();
+    } catch (error) {
+      console.log("🎵 Error setting new source:", error);
+      clearTimeout(timeoutId);
+      onError();
+    }
+  }
+
+  // Fallback method if we can't find the audio player
+  fallbackToPageReload() {
+    console.log("🎵 Using fallback page reload method");
+
+    if (this.globalRadioPlayer && this.globalRadioPlayer.showNotification) {
+      this.globalRadioPlayer.showNotification(
+        "Station switched! The page will refresh to complete the change.",
+        "info",
+      );
+    }
+
+    // Give a moment for the notification to show, then reload
+    setTimeout(() => {
+      window.location.reload();
+    }, 2000);
+  }
+
+  // Alternative method: Force reinitialize the entire global player
+  forceReinitializePlayer() {
+    console.log("🎵 Force reinitializing global player");
+
+    if (typeof initGlobalRadioPlayer === "function") {
+      // Clear the existing instance
+      if (window.globalRadioPlayer) {
+        window.globalRadioPlayer.cleanup();
+      }
+      window.globalRadioPlayer = null;
+
+      // Reinitialize
+      setTimeout(() => {
+        initGlobalRadioPlayer();
+
+        if (this.globalRadioPlayer && this.globalRadioPlayer.showNotification) {
+          this.globalRadioPlayer.showNotification(
+            "Station switched and player reinitialized!",
+            "success",
+          );
+        }
+      }, 1000);
     }
   }
 
