@@ -343,6 +343,17 @@ class GlobalRadioPlayer {
       console.log("🔧 Bound radio quote functionality");
     }
 
+    // Station Manager initialization for home page
+    if (document.getElementById("stations-grid")) {
+      console.log("🎵 Home page detected, initializing station manager");
+      if (!this.stationManager) {
+        this.stationManager = new StationManager(this);
+      }
+      this.stationManager.init();
+    } else {
+      console.log("🎵 Not on home page, skipping station manager");
+    }
+
     // Directory page functionality
     this.setupDirectoryFunctionality();
   }
@@ -1409,6 +1420,8 @@ class GlobalRadioPlayer {
     }
   }
 
+  // Add this method to your GlobalRadioPlayer class if it doesn't exist:
+
   showNotification(message, type = "info") {
     let notification = document.getElementById("global-radio-notification");
     if (!notification) {
@@ -1425,22 +1438,22 @@ class GlobalRadioPlayer {
           : "rgba(94, 96, 206, 0.9)";
 
     notification.style.cssText = `
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      padding: 12px 20px;
-      background: ${bgColor};
-      color: white;
-      border-radius: 8px;
-      z-index: 1001;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-      font-family: inherit;
-      font-size: 14px;
-      max-width: 350px;
-      line-height: 1.4;
-      transform: translateX(100%);
-      transition: transform 0.3s ease;
-    `;
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          padding: 12px 20px;
+          background: ${bgColor};
+          color: white;
+          border-radius: 8px;
+          z-index: 1001;
+          box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+          font-family: inherit;
+          font-size: 14px;
+          max-width: 350px;
+          line-height: 1.4;
+          transform: translateX(100%);
+          transition: transform 0.3s ease;
+      `;
 
     notification.textContent = message;
     notification.style.display = "block";
@@ -1601,6 +1614,226 @@ function updateRadioQuote() {
 
   const quote = getRandomQuote();
   radioQuote.innerHTML = `"${quote.text}"<footer>— ${quote.author}</footer>`;
+}
+
+// Station management JavaScript - Add this to scripts.js
+class StationManager {
+  constructor(globalRadioPlayer) {
+    this.globalRadioPlayer = globalRadioPlayer;
+    this.stations = [];
+    this.currentStationId = "all";
+    this.stationsGrid = null;
+    this.currentStationName = null;
+
+    console.log("🎵 Station Manager created");
+  }
+
+  async init() {
+    console.log("🎵 Initializing Station Manager");
+
+    this.stationsGrid = document.getElementById("stations-grid");
+    this.currentStationName = document.getElementById("current-station-name");
+
+    if (!this.stationsGrid) {
+      console.log("🎵 Station grid not found, not on home page");
+      return;
+    }
+
+    await this.loadStations();
+    this.renderStations();
+    this.startStationSync();
+  }
+
+  async loadStations() {
+    try {
+      console.log("🎵 Loading stations from server...");
+      const response = await fetch("/stations");
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+
+      this.stations = data.stations || [];
+      this.currentStationId = data.current_station || "all";
+
+      console.log("🎵 Loaded stations:", this.stations);
+      console.log("🎵 Current station ID:", this.currentStationId);
+    } catch (error) {
+      console.error("🎵 Error loading stations:", error);
+      // Show fallback stations
+      this.stations = [
+        {
+          id: "all",
+          name: "All Shows",
+          description: "Every McElroy podcast mixed together",
+          type: "all",
+          icon: "fa-radio",
+          color: "#5e60ce",
+          episode_count: 0,
+        },
+      ];
+    }
+  }
+
+  renderStations() {
+    if (!this.stationsGrid) {
+      console.log("🎵 No stations grid found, skipping render");
+      return;
+    }
+
+    console.log("🎵 Rendering", this.stations.length, "stations");
+
+    this.stationsGrid.innerHTML = "";
+
+    this.stations.forEach((station) => {
+      console.log("🎵 Creating card for station:", station.name);
+      const stationCard = this.createStationCard(station);
+      this.stationsGrid.appendChild(stationCard);
+    });
+
+    this.updateCurrentStationDisplay();
+  }
+
+  createStationCard(station) {
+    const template = document.getElementById("station-card-template");
+    if (!template) {
+      console.error("🎵 Station card template not found!");
+      return document.createElement("div");
+    }
+
+    const card = template.content.cloneNode(true);
+
+    const cardElement = card.querySelector(".station-card");
+    cardElement.dataset.stationId = station.id;
+    cardElement.dataset.stationType = station.type;
+
+    // Set custom color if available
+    if (station.color) {
+      cardElement.style.setProperty("--station-color", station.color);
+    }
+
+    card.querySelector(".station-icon").className =
+      `station-icon fas ${station.icon || "fa-radio"}`;
+    card.querySelector(".station-name").textContent = station.name;
+    card.querySelector(".station-description").textContent =
+      station.description;
+    card.querySelector(".episode-count").textContent =
+      `${station.episode_count || 0} episodes`;
+    card.querySelector(".station-type").textContent = station.type;
+
+    const tuneBtn = card.querySelector(".tune-btn");
+    tuneBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      this.switchToStation(station.id);
+    });
+
+    // Mark as active if current station
+    if (station.id === this.currentStationId) {
+      cardElement.classList.add("active");
+      tuneBtn.innerHTML = '<i class="fas fa-volume-up"></i> Currently Playing';
+      tuneBtn.disabled = true;
+    }
+
+    return card;
+  }
+
+  // Replace the switchToStation method in StationManager with this:
+
+  async switchToStation(stationId) {
+    try {
+      console.log("🎵 Switching to station:", stationId);
+
+      const response = await fetch(`/switch-station?id=${stationId}`, {
+        method: "POST",
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        console.log("🎵 Station switch response:", data);
+
+        this.currentStationId = stationId;
+        this.renderStations(); // Re-render to update active state
+
+        // Show notification
+        if (this.globalRadioPlayer && this.globalRadioPlayer.showNotification) {
+          this.globalRadioPlayer.showNotification(
+            `Tuned to ${this.getStationName(stationId)}`,
+            "success",
+          );
+        }
+
+        // Force refresh the entire stream and UI
+        if (this.globalRadioPlayer) {
+          console.log("🎵 Refreshing audio stream for new station");
+
+          // Stop current audio
+          if (this.globalRadioPlayer.audioPlayer) {
+            this.globalRadioPlayer.audioPlayer.pause();
+            this.globalRadioPlayer.audioPlayer.currentTime = 0;
+          }
+
+          // Wait a moment then reinitialize
+          setTimeout(() => {
+            this.globalRadioPlayer.initializeAudio();
+            // Also refresh the current episode info
+            this.globalRadioPlayer.checkForNewEpisode();
+          }, 1000);
+        }
+      } else {
+        const errorText = await response.text();
+        throw new Error(
+          `Failed to switch station: ${response.status} - ${errorText}`,
+        );
+      }
+    } catch (error) {
+      console.error("🎵 Error switching station:", error);
+      if (this.globalRadioPlayer && this.globalRadioPlayer.showNotification) {
+        this.globalRadioPlayer.showNotification(
+          "Failed to switch station: " + error.message,
+          "error",
+        );
+      }
+    }
+  }
+
+  getStationName(stationId) {
+    const station = this.stations.find((s) => s.id === stationId);
+    return station ? station.name : "Unknown Station";
+  }
+
+  updateCurrentStationDisplay() {
+    if (this.currentStationName) {
+      this.currentStationName.textContent = this.getStationName(
+        this.currentStationId,
+      );
+    }
+  }
+
+  startStationSync() {
+    // Check for station updates every 30 seconds
+    setInterval(async () => {
+      await this.loadStations();
+      this.updateCurrentStationDisplay();
+    }, 30000);
+  }
+}
+
+// Update the bindPageSpecificElements method in GlobalRadioPlayer to include station manager
+// Add this to the bindPageSpecificElements method:
+
+// IN YOUR EXISTING bindPageSpecificElements method, ADD THIS:
+
+// Station Manager initialization for home page
+if (document.getElementById("stations-grid")) {
+  console.log("🎵 Home page detected, initializing station manager");
+  if (!this.stationManager) {
+    this.stationManager = new StationManager(this);
+  }
+  this.stationManager.init();
+} else {
+  console.log("🎵 Not on home page, skipping station manager");
 }
 
 // Theme Management System

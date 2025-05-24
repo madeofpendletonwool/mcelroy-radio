@@ -20,21 +20,23 @@ import (
 	"github.com/madeofpendletonwool/mcelroy-radio/internal/config"
 	"github.com/madeofpendletonwool/mcelroy-radio/internal/models"
 	"github.com/madeofpendletonwool/mcelroy-radio/internal/player"
+	"github.com/madeofpendletonwool/mcelroy-radio/internal/station"
 	"github.com/madeofpendletonwool/mcelroy-radio/internal/storage"
 )
 
-// Handler manages HTTP requests
+// Update the Handler struct to include stationManager
 type Handler struct {
-	config    *config.Config
-	fileStore *storage.FileStore
-	player    *player.RadioPlayer
-	templates map[string]*template.Template
-	mu        sync.RWMutex
+	config         *config.Config
+	fileStore      *storage.FileStore
+	player         *player.RadioPlayer
+	stationManager *station.Manager
+	analyticsStore *storage.AnalyticsStore // Add this line
+	templates      map[string]*template.Template
+	mu             sync.RWMutex
 }
 
 func New(cfg *config.Config, fs *storage.FileStore) *Handler {
 	// Create a template with functions
-	// Update your funcMap in handlers.go New function
 	funcMap := template.FuncMap{
 		"currentYear": func() int {
 			return time.Now().Year()
@@ -53,6 +55,9 @@ func New(cfg *config.Config, fs *storage.FileStore) *Handler {
 				return 0
 			}
 			return float64(a) / float64(b)
+		},
+		"mul": func(a, b float64) float64 {
+			return a * b
 		},
 		"replaceSpaces": func(s string) string {
 			return strings.ReplaceAll(s, " ", "-")
@@ -76,8 +81,19 @@ func New(cfg *config.Config, fs *storage.FileStore) *Handler {
 			mb := float64(bytes) / 1024 / 1024
 			return fmt.Sprintf("%.1f MB", mb)
 		},
-		"toFloat": func(i int64) float64 {
-			return float64(i)
+		"toFloat": func(v interface{}) float64 {
+			switch val := v.(type) {
+			case int:
+				return float64(val)
+			case int64:
+				return float64(val)
+			case float64:
+				return val
+			case float32:
+				return float64(val)
+			default:
+				return 0
+			}
 		},
 	}
 
@@ -86,12 +102,14 @@ func New(cfg *config.Config, fs *storage.FileStore) *Handler {
 	homePath := filepath.Join(cfg.TemplatesDir, "pages", "home.html")
 	aboutPath := filepath.Join(cfg.TemplatesDir, "pages", "about.html")
 	directoryPath := filepath.Join(cfg.TemplatesDir, "pages", "directory.html")
+	analyticsPath := filepath.Join(cfg.TemplatesDir, "pages", "analytics.html")
 
 	log.Printf("Loading templates from paths:")
 	log.Printf("Layout: %s", layoutPath)
 	log.Printf("Home: %s", homePath)
 	log.Printf("About: %s", aboutPath)
 	log.Printf("Directory: %s", directoryPath)
+	log.Printf("Analytics: %s", analyticsPath)
 
 	// Check if directory template file exists
 	if _, err := os.Stat(directoryPath); os.IsNotExist(err) {
@@ -114,11 +132,18 @@ func New(cfg *config.Config, fs *storage.FileStore) *Handler {
 		log.Fatalf("Error parsing directory template: %v", err)
 	}
 
+	// Analytics template
+	analyticsTemplate, err := template.New("analytics").Funcs(funcMap).ParseFiles(layoutPath, analyticsPath)
+	if err != nil {
+		log.Fatalf("Error parsing analytics template: %v", err)
+	}
+
 	// Store templates in a map for easier access
 	templates := map[string]*template.Template{
 		"home":      homeTemplate,
 		"about":     aboutTemplate,
 		"directory": directoryTemplate,
+		"analytics": analyticsTemplate, // Add this line
 	}
 
 	// Debug: Log which templates were loaded
@@ -136,11 +161,20 @@ func New(cfg *config.Config, fs *storage.FileStore) *Handler {
 		log.Fatalf("Failed to create player: %v", err)
 	}
 
+	// Create station manager
+	sm := station.NewManager(fs, cfg.StationConfigDir)
+
+	// Create analytics store
+	analyticsDir := filepath.Join(cfg.StationConfigDir, "analytics")
+	analyticsStore := storage.NewAnalyticsStore(analyticsDir)
+
 	return &Handler{
-		config:    cfg,
-		fileStore: fs,
-		player:    p,
-		templates: templates,
+		config:         cfg,
+		fileStore:      fs,
+		player:         p,
+		stationManager: sm,
+		analyticsStore: analyticsStore,
+		templates:      templates,
 	}
 }
 
@@ -148,8 +182,8 @@ func (h *Handler) HomePage(w http.ResponseWriter, r *http.Request) {
 	log.Println("Rendering home page template")
 
 	h.mu.RLock()
-	currentEpisode := h.fileStore.GetCurrentEpisode()
-	recentEpisodes := h.fileStore.GetRecentlyPlayed()
+	currentEpisode := h.stationManager.GetCurrentEpisode()
+	recentEpisodes := h.stationManager.GetRecentlyPlayed()
 	h.mu.RUnlock()
 
 	data := map[string]interface{}{
@@ -424,9 +458,9 @@ func parseRange(rangeHeader string, fileSize int64) (start, end int64, err error
 func (h *Handler) StreamAudio(w http.ResponseWriter, r *http.Request) {
 	log.Printf("New audio stream request from %s", r.RemoteAddr)
 
-	// Get current episode
+	// Get current episode from station manager instead of fileStore
 	h.mu.RLock()
-	currentEpisode := h.fileStore.GetCurrentEpisode()
+	currentEpisode := h.stationManager.GetCurrentEpisode()
 	h.mu.RUnlock()
 
 	if currentEpisode == nil {
@@ -465,8 +499,8 @@ func (h *Handler) StreamAudio(w http.ResponseWriter, r *http.Request) {
 	// Check if this is a "radio sync" request (no range header on first request)
 	// In this case, we want to start from the server's current position
 	if rangeHeader == "" {
-		// Get server's current time position and convert to byte offset
-		serverTimePosition := h.player.GetCurrentTimePosition()
+		// Get server's current time position from station manager
+		serverTimePosition := h.stationManager.GetCurrentTimePosition()
 		if serverTimePosition > 0 && currentEpisode.Duration > 0 {
 			// Estimate byte position based on time
 			// For MP3: rough calculation is fileSize / duration * currentTime
@@ -563,6 +597,52 @@ func (h *Handler) StreamAudio(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Successfully streamed %d bytes to client", written)
 }
 
+func (h *Handler) StationList(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	stations := h.stationManager.GetAllStations()
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"stations":        stations,
+		"current_station": h.stationManager.GetCurrentStationID(),
+	})
+}
+
+func (h *Handler) SwitchStation(w http.ResponseWriter, r *http.Request) {
+	stationID := r.URL.Query().Get("id")
+	if stationID == "" {
+		http.Error(w, "Station ID required", http.StatusBadRequest)
+		return
+	}
+
+	success := h.stationManager.SwitchToStation(stationID)
+	if !success {
+		http.Error(w, "Station not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":    true,
+		"station_id": stationID,
+		"message":    "Switched station successfully",
+	})
+}
+
+func (h *Handler) StationInfo(w http.ResponseWriter, r *http.Request) {
+	stationID := r.URL.Query().Get("id")
+	if stationID == "" {
+		stationID = h.stationManager.GetCurrentStationID()
+	}
+
+	station := h.stationManager.GetStation(stationID)
+	if station == nil {
+		http.Error(w, "Station not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(station)
+}
+
 func (h *Handler) StreamPosition(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
@@ -570,11 +650,11 @@ func (h *Handler) StreamPosition(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Expires", "0")
 
 	streamInfo := h.player.GetStreamInfo()
-	currentEpisode := h.fileStore.GetCurrentEpisode()
+	currentEpisode := h.stationManager.GetCurrentEpisode()
 
 	response := map[string]interface{}{
-		"position":       h.player.GetCurrentPosition(),
-		"time_position":  h.player.GetCurrentTimePosition(),
+		"position":       h.stationManager.GetCurrentPosition(),
+		"time_position":  h.stationManager.GetCurrentTimePosition(),
 		"timestamp":      time.Now().Unix(),
 		"is_playing":     streamInfo["is_playing"],
 		"listener_count": h.player.GetListenerCount(),
@@ -592,12 +672,34 @@ func (h *Handler) StreamPosition(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+func (h *Handler) ServeManifest(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	manifest := `{
+  "name": "McElroy Radio",
+  "short_name": "McElroy Radio",
+  "description": "24/7 internet radio station playing McElroy family podcasts - where the goofs never end!",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#5e60ce",
+  "icons": [
+    {
+      "src": "/static/img/radio.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}`
+	w.Write([]byte(manifest))
+}
+
 // NowPlaying returns information about the currently playing episode
 func (h *Handler) NowPlaying(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	h.mu.RLock()
-	currentEpisode := h.fileStore.GetCurrentEpisode()
+	currentEpisode := h.stationManager.GetCurrentEpisode()
 	h.mu.RUnlock()
 
 	if currentEpisode == nil {
@@ -626,8 +728,8 @@ func (h *Handler) NowPlaying(w http.ResponseWriter, r *http.Request) {
 		"file_size":    currentEpisode.FileSize,
 
 		// Stream info
-		"current_position": streamInfo["current_position"],
-		"time_position":    streamInfo["time_position"],
+		"current_position": h.stationManager.GetCurrentPosition(),
+		"time_position":    h.stationManager.GetCurrentTimePosition(),
 		"is_playing":       streamInfo["is_playing"],
 		"listener_count":   h.player.GetListenerCount(),
 	}
@@ -640,7 +742,7 @@ func (h *Handler) RecentlyPlayed(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	h.mu.RLock()
-	recentEpisodes := h.fileStore.GetRecentlyPlayed()
+	recentEpisodes := h.stationManager.GetRecentlyPlayed()
 	h.mu.RUnlock()
 
 	json.NewEncoder(w).Encode(recentEpisodes)
@@ -676,4 +778,136 @@ func (h *Handler) StreamHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	json.NewEncoder(w).Encode(health)
+}
+
+// AnalyticsPage serves the analytics dashboard
+func (h *Handler) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
+	// Get password from environment, default to "mcelroyradio"
+	expectedPassword := os.Getenv("ANALYTICS_PASSWORD")
+	if expectedPassword == "" {
+		expectedPassword = "mcelroyradio"
+	}
+
+	username, password, ok := r.BasicAuth()
+	if !ok || username != "admin" || password != expectedPassword {
+		w.Header().Set("WWW-Authenticate", `Basic realm="Analytics Dashboard"`)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	summary := h.analyticsStore.GetSummary()
+	recentVisits := h.analyticsStore.GetRecentVisits(50)
+
+	data := map[string]interface{}{
+		"Title":        "Analytics Dashboard - McElroy Radio",
+		"Summary":      summary,
+		"RecentVisits": recentVisits,
+		"CurrentYear":  time.Now().Year(),
+	}
+
+	// Try to render HTML template first
+	if h.templates["analytics"] != nil {
+		var buf bytes.Buffer
+		err := h.templates["analytics"].ExecuteTemplate(&buf, "layout.html", data)
+		if err != nil {
+			log.Printf("Analytics template execution error: %v", err)
+			// Fall back to JSON
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(data)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html")
+		w.Write(buf.Bytes())
+		return
+	}
+
+	// Fallback to JSON if no template
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(data)
+}
+
+// AnalyticsAPI returns analytics data as JSON
+func (h *Handler) AnalyticsAPI(w http.ResponseWriter, r *http.Request) {
+	// Get password from environment, default to "mcelroyradio"
+	expectedPassword := os.Getenv("ANALYTICS_PASSWORD")
+	if expectedPassword == "" {
+		expectedPassword = "mcelroyradio"
+	}
+
+	username, password, ok := r.BasicAuth()
+	if !ok || username != "admin" || password != expectedPassword {
+		w.Header().Set("WWW-Authenticate", `Basic realm="Analytics API"`)
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	dataType := r.URL.Query().Get("type")
+
+	switch dataType {
+	case "recent":
+		limit := 100
+		if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+			if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
+				limit = parsedLimit
+			}
+		}
+		recentVisits := h.analyticsStore.GetRecentVisits(limit)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"visits": recentVisits,
+		})
+	default:
+		summary := h.analyticsStore.GetSummary()
+		json.NewEncoder(w).Encode(summary)
+	}
+}
+
+// AnalyticsMiddleware tracks visits for analytics
+func (h *Handler) AnalyticsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if h.shouldSkipTracking(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		clientIP := models.GetRealIP(
+			r.RemoteAddr,
+			r.Header.Get("X-Forwarded-For"),
+			r.Header.Get("X-Real-IP"),
+		)
+
+		go h.analyticsStore.RecordVisit(
+			clientIP,
+			r.URL.Path,
+			r.Header.Get("User-Agent"),
+		)
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// shouldSkipTracking determines if a request should be tracked
+func (h *Handler) shouldSkipTracking(path string) bool {
+	if strings.HasPrefix(path, "/static/") {
+		return true
+	}
+
+	skipPaths := []string{
+		"/stream",
+		"/now-playing",
+		"/stream-position",
+		"/favicon.ico",
+		"/manifest.json",
+		"/analytics",
+		"/analytics-api",
+	}
+
+	for _, skipPath := range skipPaths {
+		if path == skipPath || strings.HasPrefix(path, skipPath) {
+			return true
+		}
+	}
+
+	return false
 }

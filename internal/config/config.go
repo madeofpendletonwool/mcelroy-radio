@@ -2,6 +2,8 @@ package config
 
 import (
 	"context"
+	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +15,7 @@ type Config struct {
 	ContentDirectories []string
 	TemplatesDir       string
 	StaticDir          string
+	StationConfigDir   string
 	Context            context.Context
 }
 
@@ -27,38 +30,165 @@ func Load() (*Config, error) {
 	// Set up content directories
 	contentDirs := make([]string, 0)
 
-	// Parse from environment or use default
+	// Parse from environment or use auto-discovery
 	contentEnv := os.Getenv("CONTENT_DIRS")
 	if contentEnv != "" {
+		// Use explicit environment variable
 		contentDirs = strings.Split(contentEnv, ",")
+		log.Printf("Using explicit CONTENT_DIRS: %v", contentDirs)
 	} else {
-		// Default content directories
-		contentDirs = []string{
-			"/opt/mcelroy-content/show1",
-			"/opt/mcelroy-content/show2",
-			"/opt/mcelroy-content/show3",
+		// Auto-discover all subdirectories in /opt/mcelroy-content/
+		baseContentDir := "/opt/mcelroy-content"
+		discoveredDirs, err := discoverContentDirectories(baseContentDir)
+		if err != nil {
+			log.Printf("Failed to auto-discover content directories: %v", err)
+			// Fallback to default directories
+			contentDirs = []string{
+				"/opt/mcelroy-content/show1",
+				"/opt/mcelroy-content/show2",
+				"/opt/mcelroy-content/show3",
+			}
+		} else {
+			contentDirs = discoveredDirs
+			log.Printf("Auto-discovered %d content directories: %v", len(contentDirs), contentDirs)
 		}
 	}
 
 	// Ensure directories exist and are accessible
+	validDirs := make([]string, 0)
 	for _, dir := range contentDirs {
 		if _, err := os.Stat(dir); os.IsNotExist(err) {
-			// If directory doesn't exist, try to create it
+			// Try to create it
 			if err := os.MkdirAll(dir, 0755); err != nil {
-				return nil, err
+				log.Printf("Warning: Could not create directory %s: %v", dir, err)
+				continue
 			}
 		}
+		validDirs = append(validDirs, dir)
+	}
+
+	if len(validDirs) == 0 {
+		log.Printf("Warning: No valid content directories found!")
+	} else {
+		log.Printf("Using %d valid content directories", len(validDirs))
 	}
 
 	// Set template and static directories
 	templatesDir := filepath.Join(".", "templates")
 	staticDir := filepath.Join(".", "static")
 
+	// Station config directory
+	stationConfigDir := os.Getenv("STATION_CONFIG_DIR")
+	if stationConfigDir == "" {
+		stationConfigDir = "/opt/mcelroy-content/config"
+	}
+
 	return &Config{
 		Port:               port,
-		ContentDirectories: contentDirs,
+		ContentDirectories: validDirs,
 		TemplatesDir:       templatesDir,
 		StaticDir:          staticDir,
+		StationConfigDir:   stationConfigDir,
 		Context:            context.Background(),
 	}, nil
+}
+
+// discoverContentDirectories automatically finds all subdirectories in the base content directory
+func discoverContentDirectories(baseDir string) ([]string, error) {
+	var contentDirs []string
+
+	// Check if base directory exists
+	if _, err := os.Stat(baseDir); os.IsNotExist(err) {
+		// Create base directory if it doesn't exist
+		if err := os.MkdirAll(baseDir, 0755); err != nil {
+			return nil, err
+		}
+		log.Printf("Created base content directory: %s", baseDir)
+		return contentDirs, nil
+	}
+
+	// Walk through the base directory and find all subdirectories
+	err := filepath.WalkDir(baseDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			log.Printf("Warning: Error accessing %s: %v", path, err)
+			return nil // Continue walking
+		}
+
+		// Skip the root directory itself
+		if path == baseDir {
+			return nil
+		}
+
+		// Only look at direct subdirectories (not nested)
+		relPath, err := filepath.Rel(baseDir, path)
+		if err != nil {
+			return nil
+		}
+
+		// Skip nested directories (only want direct children)
+		if strings.Contains(relPath, string(filepath.Separator)) {
+			if d.IsDir() {
+				return filepath.SkipDir // Don't recurse into subdirectories
+			}
+			return nil
+		}
+
+		// Add directories that contain audio files
+		if d.IsDir() {
+			hasAudioFiles, err := directoryContainsAudioFiles(path)
+			if err != nil {
+				log.Printf("Warning: Error checking directory %s for audio files: %v", path, err)
+				return nil
+			}
+
+			if hasAudioFiles {
+				contentDirs = append(contentDirs, path)
+				log.Printf("Discovered content directory: %s", path)
+			} else {
+				log.Printf("Skipping directory %s (no audio files found)", path)
+			}
+		}
+
+		return nil
+	})
+
+	return contentDirs, err
+}
+
+// directoryContainsAudioFiles checks if a directory contains any audio files
+func directoryContainsAudioFiles(dir string) (bool, error) {
+	audioExtensions := map[string]bool{
+		".mp3":  true,
+		".m4a":  true,
+		".ogg":  true,
+		".wav":  true,
+		".flac": true,
+		".aac":  true,
+	}
+
+	// Check if directory has any audio files (just check first few entries for performance)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return false, err
+	}
+
+	count := 0
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		ext := strings.ToLower(filepath.Ext(entry.Name()))
+		if audioExtensions[ext] {
+			return true, nil
+		}
+
+		// Only check first 50 files for performance
+		count++
+		if count > 50 {
+			break
+		}
+	}
+
+	return false, nil
 }

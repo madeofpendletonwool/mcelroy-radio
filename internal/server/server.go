@@ -32,6 +32,7 @@ func New(cfg *config.Config) (*http.Server, error) {
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	r.Use(h.AnalyticsMiddleware)
 	r.Use(middleware.Timeout(30 * time.Second))
 
 	// Routes
@@ -44,6 +45,16 @@ func New(cfg *config.Config) (*http.Server, error) {
 	r.Get("/directory", h.DirectoryPage)
 	r.Get("/stream-position", h.StreamPosition)
 
+	// Station routes
+	r.Get("/stations", h.StationList)
+	r.Post("/switch-station", h.SwitchStation)
+	r.Get("/station-info", h.StationInfo)
+
+	// Add these routes with the others
+	r.Get("/analytics", h.AnalyticsPage)
+	r.Get("/analytics-api", h.AnalyticsAPI)
+	r.Get("/manifest.json", h.ServeManifest)
+
 	r.Get("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, filepath.Join(cfg.StaticDir, "img", "favicon.ico"))
 	})
@@ -53,6 +64,9 @@ func New(cfg *config.Config) (*http.Server, error) {
 
 	// Add episode details route for the directory
 	r.Get("/episode-details", h.EpisodeDetails)
+
+	// PWA support
+	r.Get("/manifest.json", h.ServeManifest)
 
 	// Static file server
 	log.Printf("Serving static files from: %s", cfg.StaticDir)
