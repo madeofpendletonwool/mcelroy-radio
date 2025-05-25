@@ -2383,6 +2383,7 @@ class ThemeManager {
     this.createThemeSelector();
     this.applyTheme(this.currentTheme);
     this.setupEventListeners();
+    this.setupMobileNavigation();
     this.setupKonamiCode();
     this.updateDisplay();
   }
@@ -2426,12 +2427,23 @@ class ThemeManager {
     if (themeDisplay) themeDisplay.textContent = themeName;
     if (currentThemeSpan) currentThemeSpan.textContent = themeName;
 
+    // Update desktop theme options
     document.querySelectorAll(".theme-option").forEach((option) => {
       option.classList.toggle(
         "active",
         option.dataset.theme === this.currentTheme,
       );
     });
+
+    // Update mobile theme options (only if they exist)
+    if (window.innerWidth <= 768) {
+      document.querySelectorAll(".mobile-theme-option").forEach((option) => {
+        option.classList.toggle(
+          "active",
+          option.dataset.theme === this.currentTheme,
+        );
+      });
+    }
   }
 
   getThemeName(theme) {
@@ -2452,7 +2464,8 @@ class ThemeManager {
     const nav = document.querySelector("nav");
     if (!nav) return;
 
-    const themeSelectorHTML = `
+    // Create desktop theme selector
+    const desktopThemeSelectorHTML = `
       <div class="theme-selector">
           <button class="theme-button" id="theme-toggle">
               <i class="fas fa-palette"></i>
@@ -2503,7 +2516,158 @@ class ThemeManager {
       </div>
     `;
 
-    nav.insertAdjacentHTML("beforeend", themeSelectorHTML);
+    // Create mobile theme selector for header
+    const mobileHeaderThemeHTML = `
+      <div class="theme-selector">
+          <button class="theme-button" id="mobile-theme-toggle">
+              <i class="fas fa-palette"></i>
+          </button>
+      </div>
+    `;
+
+    // Insert desktop version into nav ul area
+    nav
+      .querySelector("ul")
+      .insertAdjacentHTML("afterend", desktopThemeSelectorHTML);
+
+    // Insert mobile version into mobile header actions
+    const mobileActions = nav.querySelector(".mobile-header-actions");
+    if (mobileActions) {
+      mobileActions.insertAdjacentHTML("afterbegin", mobileHeaderThemeHTML);
+    }
+
+    this.createMobileThemeGrid();
+  }
+
+  createMobileThemeGrid() {
+    const mobileThemeGrid = document.getElementById("mobile-theme-grid");
+    if (!mobileThemeGrid) return;
+
+    const themes = [
+      {
+        id: "light",
+        name: "Light",
+        colors: ["#5e60ce", "#64dfdf", "#ff7c7c"],
+      },
+      {
+        id: "dark",
+        name: "Dark",
+        colors: ["#7c3aed", "#06b6d4", "#f59e0b"],
+      },
+      {
+        id: "synthwave",
+        name: "Synthwave",
+        colors: ["#ff0080", "#00ffff", "#ffff00"],
+      },
+      {
+        id: "forest",
+        name: "Forest",
+        colors: ["#16a085", "#27ae60", "#f39c12"],
+      },
+      {
+        id: "ocean",
+        name: "Ocean",
+        colors: ["#3498db", "#2980b9", "#1abc9c"],
+      },
+    ];
+
+    themes.forEach((theme) => {
+      const themeOption = document.createElement("div");
+      themeOption.className = "mobile-theme-option";
+      themeOption.dataset.theme = theme.id;
+
+      themeOption.innerHTML = `
+        <div class="theme-preview">
+          ${theme.colors
+            .map(
+              (color) =>
+                `<div class="theme-preview-color" style="background: ${color};"></div>`,
+            )
+            .join("")}
+        </div>
+        <div class="mobile-theme-name">${theme.name}</div>
+      `;
+
+      themeOption.addEventListener("click", () => {
+        this.applyTheme(theme.id);
+        this.closeMobileMenu();
+      });
+
+      mobileThemeGrid.appendChild(themeOption);
+    });
+  }
+
+  setupMobileNavigation() {
+    const mobileMenuToggle = document.getElementById("mobile-menu-toggle");
+    const mobileNavOverlay = document.getElementById("mobile-nav-overlay");
+    const mobileNavClose = document.getElementById("mobile-nav-close");
+    const mobileThemeToggle = document.getElementById("mobile-theme-toggle");
+
+    if (mobileMenuToggle) {
+      mobileMenuToggle.addEventListener("click", () => {
+        this.openMobileMenu();
+      });
+    }
+
+    if (mobileNavClose) {
+      mobileNavClose.addEventListener("click", () => {
+        this.closeMobileMenu();
+      });
+    }
+
+    if (mobileNavOverlay) {
+      mobileNavOverlay.addEventListener("click", (e) => {
+        if (e.target === mobileNavOverlay) {
+          this.closeMobileMenu();
+        }
+      });
+    }
+
+    if (mobileThemeToggle) {
+      mobileThemeToggle.addEventListener("click", () => {
+        this.openMobileMenu();
+      });
+    }
+
+    // Handle escape key for mobile menu
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        this.closeMobileMenu();
+      }
+    });
+
+    // Update mobile nav active states based on current page
+    this.updateMobileNavActiveStates();
+  }
+
+  openMobileMenu() {
+    const mobileNavOverlay = document.getElementById("mobile-nav-overlay");
+    if (mobileNavOverlay) {
+      mobileNavOverlay.classList.add("active");
+      document.body.style.overflow = "hidden"; // Prevent background scrolling
+    }
+  }
+
+  closeMobileMenu() {
+    const mobileNavOverlay = document.getElementById("mobile-nav-overlay");
+    if (mobileNavOverlay) {
+      mobileNavOverlay.classList.remove("active");
+      document.body.style.overflow = ""; // Restore scrolling
+    }
+  }
+
+  updateMobileNavActiveStates() {
+    const currentPath = window.location.pathname;
+    const mobileNavLinks = document.querySelectorAll(".mobile-nav-link");
+
+    mobileNavLinks.forEach((link) => {
+      const href = new URL(link.href).pathname;
+      if (href === currentPath) {
+        link.classList.add("active");
+      } else {
+        link.classList.remove("active");
+      }
+    });
   }
 
   setupEventListeners() {
@@ -2684,6 +2848,35 @@ class ThemeManager {
       });
 
       themeDropdown.appendChild(hotdogOption);
+    }
+
+    // Only add to mobile theme grid if on mobile and it exists
+    if (window.innerWidth <= 768) {
+      const mobileThemeGrid = document.getElementById("mobile-theme-grid");
+      if (
+        mobileThemeGrid &&
+        !mobileThemeGrid.querySelector('[data-theme="hotdog"]')
+      ) {
+        const mobileHotdogOption = document.createElement("div");
+        mobileHotdogOption.className = "mobile-theme-option";
+        mobileHotdogOption.dataset.theme = "hotdog";
+
+        mobileHotdogOption.innerHTML = `
+          <div class="theme-preview">
+            <div class="theme-preview-color" style="background: #ff0000;"></div>
+            <div class="theme-preview-color" style="background: #ffff00;"></div>
+            <div class="theme-preview-color" style="background: #ff8000;"></div>
+          </div>
+          <div class="mobile-theme-name">🌭 Hot Dog</div>
+        `;
+
+        mobileHotdogOption.addEventListener("click", () => {
+          this.applyTheme("hotdog");
+          this.closeMobileMenu();
+        });
+
+        mobileThemeGrid.appendChild(mobileHotdogOption);
+      }
     }
   }
 
