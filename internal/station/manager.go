@@ -17,14 +17,17 @@ import (
 	"github.com/madeofpendletonwool/mcelroy-radio/internal/storage"
 )
 
-// Manager handles multiple radio stations
+// Manager handles multiple radio stations with independent time progression
 type Manager struct {
-	stations       map[string]*models.Station
-	currentStation string
-	fileStore      *storage.FileStore
-	configPath     string
-	mutex          sync.RWMutex
-	rng            *rand.Rand
+	stations   map[string]*models.Station
+	fileStore  *storage.FileStore
+	configPath string
+	mutex      sync.RWMutex
+	rng        *rand.Rand
+
+	// Remove currentStation - each user tracks their own
+	stationTickers map[string]*time.Ticker // Individual tickers for each station
+	stopChannels   map[string]chan bool    // Stop channels for each station
 }
 
 // NewManager creates a new station manager
@@ -34,14 +37,15 @@ func NewManager(fileStore *storage.FileStore, configPath string) *Manager {
 
 	m := &Manager{
 		stations:       make(map[string]*models.Station),
-		currentStation: "all",
 		fileStore:      fileStore,
 		configPath:     configPath,
 		rng:            rng,
+		stationTickers: make(map[string]*time.Ticker),
+		stopChannels:   make(map[string]chan bool),
 	}
 
 	m.initializeStations()
-	go m.stationProgressLoop()
+	m.startAllStationProgression() // Start ALL stations progressing
 
 	return m
 }
@@ -61,7 +65,7 @@ func (m *Manager) initializeStations() {
 		Type:           "all",
 		Shows:          []string{}, // Empty means all shows
 		PlayedEpisodes: make(map[string]bool),
-		IsPlaying:      true,
+		IsPlaying:      true, // All stations are always playing
 		Color:          "#5e60ce",
 		Icon:           "fa-radio",
 	}
@@ -88,6 +92,7 @@ func (m *Manager) initializeStations() {
 			Type:           "show",
 			Shows:          []string{showName},
 			PlayedEpisodes: make(map[string]bool),
+			IsPlaying:      true, // All stations always playing
 			Color:          m.getShowColor(showName),
 			Icon:           m.getShowIcon(showName),
 		}
@@ -107,6 +112,120 @@ func (m *Manager) initializeStations() {
 	}
 
 	log.Printf("Initialized %d radio stations", len(m.stations))
+}
+
+// startAllStationProgression starts independent time progression for ALL stations
+func (m *Manager) startAllStationProgression() {
+	for stationID := range m.stations {
+		m.startStationProgression(stationID)
+	}
+}
+
+// startStationProgression starts time progression for a specific station
+func (m *Manager) startStationProgression(stationID string) {
+	// Stop existing progression if any
+	m.stopStationProgression(stationID)
+
+	stopChan := make(chan bool)
+	ticker := time.NewTicker(5 * time.Second)
+
+	m.stationTickers[stationID] = ticker
+	m.stopChannels[stationID] = stopChan
+
+	go func(id string) {
+		log.Printf("Started time progression for station: %s", id)
+
+		for {
+			select {
+			case <-ticker.C:
+				m.checkStationProgress(id)
+			case <-stopChan:
+				log.Printf("Stopped time progression for station: %s", id)
+				ticker.Stop()
+				return
+			}
+		}
+	}(stationID)
+}
+
+// stopStationProgression stops time progression for a specific station
+func (m *Manager) stopStationProgression(stationID string) {
+	if ticker, exists := m.stationTickers[stationID]; exists {
+		ticker.Stop()
+		delete(m.stationTickers, stationID)
+	}
+
+	if stopChan, exists := m.stopChannels[stationID]; exists {
+		close(stopChan)
+		delete(m.stopChannels, stationID)
+	}
+}
+
+// checkStationProgress checks if a specific station needs to advance episodes
+func (m *Manager) checkStationProgress(stationID string) {
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+
+	station := m.stations[stationID]
+	if station == nil || station.CurrentEpisode == nil {
+		return
+	}
+
+	// Calculate playing time
+	playingTime := time.Since(station.EpisodeStartTime).Seconds()
+
+	// If episode is finished, advance to next
+	if station.CurrentEpisode.Duration > 0 && playingTime >= station.CurrentEpisode.Duration {
+		log.Printf("Station %s episode finished, advancing", station.Name)
+		m.advanceStationEpisode(station)
+	}
+
+	// Update position
+	station.TimePosition = playingTime
+	bytesPerSecond := int64(16000) // Rough estimate for MP3
+	station.CurrentPosition = int64(playingTime * float64(bytesPerSecond))
+}
+
+// advanceStationEpisode moves a station to its next episode
+func (m *Manager) advanceStationEpisode(station *models.Station) {
+	if len(station.Episodes) == 0 {
+		return
+	}
+
+	// Add current to recently played
+	if station.CurrentEpisode != nil {
+		station.CurrentEpisode.PlayedAt = time.Now()
+		station.RecentlyPlayed = append([]*models.Episode{station.CurrentEpisode}, station.RecentlyPlayed...)
+		if len(station.RecentlyPlayed) > 10 {
+			station.RecentlyPlayed = station.RecentlyPlayed[:10]
+		}
+	}
+
+	// Find unplayed episodes
+	var unplayedEpisodes []*models.Episode
+	for _, episode := range station.Episodes {
+		if !station.PlayedEpisodes[episode.ID] {
+			unplayedEpisodes = append(unplayedEpisodes, episode)
+		}
+	}
+
+	// If all played, reset
+	if len(unplayedEpisodes) == 0 {
+		log.Printf("Station %s completed cycle, resetting", station.Name)
+		station.PlayedEpisodes = make(map[string]bool)
+		unplayedEpisodes = station.Episodes
+	}
+
+	// Select random unplayed episode
+	randomIndex := m.rng.Intn(len(unplayedEpisodes))
+	station.CurrentEpisode = unplayedEpisodes[randomIndex]
+	station.EpisodeStartTime = time.Now()
+	station.TimePosition = 0
+	station.CurrentPosition = 0
+	station.PlayedEpisodes[station.CurrentEpisode.ID] = true
+	station.CurrentEpisode.RandomFact = models.GetRandomFact()
+
+	log.Printf("Station %s now playing: %s", station.Name, station.CurrentEpisode.Title)
 }
 
 // loadCustomStations loads custom stations from config file
@@ -142,6 +261,7 @@ func (m *Manager) loadCustomStations() {
 			Type:           "custom",
 			Shows:          customStation.Shows,
 			PlayedEpisodes: make(map[string]bool),
+			IsPlaying:      true, // All stations always playing
 			Color:          customStation.Color,
 			Icon:           customStation.Icon,
 		}
@@ -211,84 +331,6 @@ func (m *Manager) selectInitialEpisode(station *models.Station) {
 	log.Printf("Station %s starting with: %s", station.Name, station.CurrentEpisode.Title)
 }
 
-// stationProgressLoop manages episode progression for the current station
-func (m *Manager) stationProgressLoop() {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		<-ticker.C
-		m.checkCurrentStationProgress()
-	}
-}
-
-// checkCurrentStationProgress checks if the current station needs to advance episodes
-func (m *Manager) checkCurrentStationProgress() {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-
-	currentStation := m.stations[m.currentStation]
-	if currentStation == nil || currentStation.CurrentEpisode == nil {
-		return
-	}
-
-	// Calculate playing time
-	playingTime := time.Since(currentStation.EpisodeStartTime).Seconds()
-
-	// If episode is finished, advance to next
-	if currentStation.CurrentEpisode.Duration > 0 && playingTime >= currentStation.CurrentEpisode.Duration {
-		log.Printf("Station %s episode finished, advancing", currentStation.Name)
-		m.advanceStationEpisode(currentStation)
-	}
-
-	// Update position
-	currentStation.TimePosition = playingTime
-	bytesPerSecond := int64(16000) // Rough estimate for MP3
-	currentStation.CurrentPosition = int64(playingTime * float64(bytesPerSecond))
-}
-
-// advanceStationEpisode moves a station to its next episode
-func (m *Manager) advanceStationEpisode(station *models.Station) {
-	if len(station.Episodes) == 0 {
-		return
-	}
-
-	// Add current to recently played
-	if station.CurrentEpisode != nil {
-		station.CurrentEpisode.PlayedAt = time.Now()
-		station.RecentlyPlayed = append([]*models.Episode{station.CurrentEpisode}, station.RecentlyPlayed...)
-		if len(station.RecentlyPlayed) > 10 {
-			station.RecentlyPlayed = station.RecentlyPlayed[:10]
-		}
-	}
-
-	// Find unplayed episodes
-	var unplayedEpisodes []*models.Episode
-	for _, episode := range station.Episodes {
-		if !station.PlayedEpisodes[episode.ID] {
-			unplayedEpisodes = append(unplayedEpisodes, episode)
-		}
-	}
-
-	// If all played, reset
-	if len(unplayedEpisodes) == 0 {
-		log.Printf("Station %s completed cycle, resetting", station.Name)
-		station.PlayedEpisodes = make(map[string]bool)
-		unplayedEpisodes = station.Episodes
-	}
-
-	// Select random unplayed episode
-	randomIndex := m.rng.Intn(len(unplayedEpisodes))
-	station.CurrentEpisode = unplayedEpisodes[randomIndex]
-	station.EpisodeStartTime = time.Now()
-	station.TimePosition = 0
-	station.CurrentPosition = 0
-	station.PlayedEpisodes[station.CurrentEpisode.ID] = true
-	station.CurrentEpisode.RandomFact = models.GetRandomFact()
-
-	log.Printf("Station %s now playing: %s", station.Name, station.CurrentEpisode.Title)
-}
-
 // Public methods for the handler
 
 // GetAllStations returns all available stations
@@ -303,13 +345,6 @@ func (m *Manager) GetAllStations() []*models.Station {
 	return stations
 }
 
-// GetCurrentStationID returns the ID of the current station
-func (m *Manager) GetCurrentStationID() string {
-	m.mutex.RLock()
-	defer m.mutex.RUnlock()
-	return m.currentStation
-}
-
 // GetStation returns a specific station by ID
 func (m *Manager) GetStation(stationID string) *models.Station {
 	m.mutex.RLock()
@@ -317,76 +352,89 @@ func (m *Manager) GetStation(stationID string) *models.Station {
 	return m.stations[stationID]
 }
 
-// SwitchToStation changes the current station
-func (m *Manager) SwitchToStation(stationID string) bool {
-	m.mutex.Lock()
-	defer m.mutex.Unlock()
-
-	station, exists := m.stations[stationID]
-	if !exists {
-		return false
+// GetCurrentEpisode returns the current episode from a specific station
+func (m *Manager) GetCurrentEpisode(stationID string) *models.Episode {
+	if stationID == "" {
+		stationID = "all" // Default to "all" station
 	}
 
-	// Stop current station
-	if currentStation := m.stations[m.currentStation]; currentStation != nil {
-		currentStation.IsPlaying = false
-	}
-
-	// Start new station
-	m.currentStation = stationID
-	station.IsPlaying = true
-
-	log.Printf("Switched to station: %s", station.Name)
-	return true
-}
-
-// GetCurrentEpisode returns the current episode from the active station
-func (m *Manager) GetCurrentEpisode() *models.Episode {
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
-	currentStation := m.stations[m.currentStation]
-	if currentStation == nil {
+	station := m.stations[stationID]
+	if station == nil {
+		// Fallback to "all" station if requested station doesn't exist
+		station = m.stations["all"]
+	}
+
+	if station == nil {
 		return nil
 	}
-	return currentStation.CurrentEpisode
+	return station.CurrentEpisode
 }
 
-// GetCurrentTimePosition returns current time position for active station
-func (m *Manager) GetCurrentTimePosition() float64 {
+// GetCurrentTimePosition returns current time position for a specific station
+func (m *Manager) GetCurrentTimePosition(stationID string) float64 {
+	if stationID == "" {
+		stationID = "all"
+	}
+
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
-	currentStation := m.stations[m.currentStation]
-	if currentStation == nil {
+	station := m.stations[stationID]
+	if station == nil {
+		station = m.stations["all"]
+	}
+
+	if station == nil {
 		return 0
 	}
-	return currentStation.TimePosition
+	return station.TimePosition
 }
 
-// GetCurrentPosition returns current byte position for active station
-func (m *Manager) GetCurrentPosition() int64 {
+// GetCurrentPosition returns current byte position for a specific station
+func (m *Manager) GetCurrentPosition(stationID string) int64 {
+	if stationID == "" {
+		stationID = "all"
+	}
+
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
-	currentStation := m.stations[m.currentStation]
-	if currentStation == nil {
+	station := m.stations[stationID]
+	if station == nil {
+		station = m.stations["all"]
+	}
+
+	if station == nil {
 		return 0
 	}
-	return currentStation.CurrentPosition
+	return station.CurrentPosition
 }
 
-// GetRecentlyPlayed returns recently played episodes from current station
-func (m *Manager) GetRecentlyPlayed() []*models.Episode {
+// GetRecentlyPlayed returns recently played episodes from a specific station
+func (m *Manager) GetRecentlyPlayed(stationID string) []*models.Episode {
+	if stationID == "" {
+		stationID = "all"
+	}
+
 	m.mutex.RLock()
 	defer m.mutex.RUnlock()
 
-	currentStation := m.stations[m.currentStation]
-	if currentStation == nil {
+	station := m.stations[stationID]
+	if station == nil {
+		station = m.stations["all"]
+	}
+
+	if station == nil {
 		return []*models.Episode{}
 	}
-	return currentStation.RecentlyPlayed
+	return station.RecentlyPlayed
 }
+
+// REMOVE the SwitchToStation method - we don't switch server state anymore!
+// Users just tell the client which station they want to listen to
 
 // Utility methods
 
@@ -436,4 +484,11 @@ func (m *Manager) getShowIcon(showName string) string {
 		return icon
 	}
 	return "fa-podcast" // Default podcast icon
+}
+
+// Cleanup stops all station progressions
+func (m *Manager) Cleanup() {
+	for stationID := range m.stations {
+		m.stopStationProgression(stationID)
+	}
 }

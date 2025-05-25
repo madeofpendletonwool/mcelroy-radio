@@ -1,5 +1,8 @@
 package player
 
+// NOTE: This file is now mostly obsolete since each station manages its own progression
+// We can keep it for compatibility but it's no longer the source of truth
+
 import (
 	"log"
 	"sync"
@@ -8,7 +11,8 @@ import (
 	"github.com/madeofpendletonwool/mcelroy-radio/internal/storage"
 )
 
-// RadioPlayer manages the episode progression and timing
+// RadioPlayer is now just a compatibility shim
+// Real player logic is in the station manager
 type RadioPlayer struct {
 	fileStore        *storage.FileStore
 	currentPosition  int64
@@ -20,7 +24,7 @@ type RadioPlayer struct {
 	episodeDuration  float64
 }
 
-// New creates a new radio player
+// New creates a new radio player (compatibility only)
 func New(fileStore *storage.FileStore) (*RadioPlayer, error) {
 	player := &RadioPlayer{
 		fileStore:       fileStore,
@@ -28,68 +32,18 @@ func New(fileStore *storage.FileStore) (*RadioPlayer, error) {
 		isPlaying:       true,
 	}
 
-	// Start the episode management routine
-	go player.episodeProgressLoop()
-
+	log.Println("RadioPlayer created (compatibility mode - stations handle their own progression)")
 	return player, nil
 }
 
-// episodeProgressLoop manages episode transitions based on timing
-func (p *RadioPlayer) episodeProgressLoop() {
-	ticker := time.NewTicker(5 * time.Second) // Check every 5 seconds
-	defer ticker.Stop()
-
-	for {
-		<-ticker.C
-		p.checkEpisodeProgress()
-	}
-}
-
-// checkEpisodeProgress checks if we need to advance to the next episode
-func (p *RadioPlayer) checkEpisodeProgress() {
-	episode := p.fileStore.GetCurrentEpisode()
-	if episode == nil {
-		return
-	}
-
-	p.playbackMutex.Lock()
-	defer p.playbackMutex.Unlock()
-
-	// Check if this is a new episode
-	if p.currentEpisodeID != episode.ID {
-		log.Printf("Starting new episode: %s", episode.Title)
-		p.currentEpisodeID = episode.ID
-		p.episodeStartTime = time.Now()
-		p.episodeDuration = episode.Duration
-		p.currentPosition = 0
-		p.isPlaying = true
-		return
-	}
-
-	// Calculate how long this episode has been playing
-	playingTime := time.Since(p.episodeStartTime).Seconds()
-
-	// If the episode duration is known and we've played past it, advance to next
-	if p.episodeDuration > 0 && playingTime >= p.episodeDuration {
-		log.Printf("Episode finished after %.2f seconds, advancing to next", playingTime)
-		p.fileStore.AdvanceToNextEpisode()
-		return
-	}
-
-	// Update current position based on elapsed time
-	// Approximate bytes per second for MP3 (128kbps ≈ 16KB/s)
-	bytesPerSecond := int64(16000)
-	p.currentPosition = int64(playingTime * float64(bytesPerSecond))
-}
-
-// GetCurrentPosition returns the current playback position in bytes (estimated)
+// GetCurrentPosition returns estimated position (compatibility)
 func (p *RadioPlayer) GetCurrentPosition() int64 {
 	p.playbackMutex.RLock()
 	defer p.playbackMutex.RUnlock()
 	return p.currentPosition
 }
 
-// GetCurrentTimePosition returns the current position in seconds
+// GetCurrentTimePosition returns current position in seconds (compatibility)
 func (p *RadioPlayer) GetCurrentTimePosition() float64 {
 	p.playbackMutex.RLock()
 	defer p.playbackMutex.RUnlock()
@@ -101,13 +55,13 @@ func (p *RadioPlayer) GetCurrentTimePosition() float64 {
 	return time.Since(p.episodeStartTime).Seconds()
 }
 
-// GetStreamInfo returns information about the current stream
+// GetStreamInfo returns information about the current stream (compatibility)
 func (p *RadioPlayer) GetStreamInfo() map[string]interface{} {
 	p.playbackMutex.RLock()
 	defer p.playbackMutex.RUnlock()
 
-	episode := p.fileStore.GetCurrentEpisode()
-
+	// Note: This now returns generic info since actual episode info
+	// is managed per-station in the station manager
 	info := map[string]interface{}{
 		"is_playing":       p.isPlaying,
 		"is_paused":        false,
@@ -115,13 +69,6 @@ func (p *RadioPlayer) GetStreamInfo() map[string]interface{} {
 		"time_position":    p.GetCurrentTimePosition(),
 		"listener_count":   0, // Not applicable for HTTP range serving
 		"stream_start":     p.streamStartTime,
-	}
-
-	if episode != nil {
-		info["episode_id"] = episode.ID
-		info["episode_title"] = episode.Title
-		info["show_name"] = episode.ShowName
-		info["duration"] = episode.Duration
 	}
 
 	return info

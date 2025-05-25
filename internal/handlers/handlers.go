@@ -155,12 +155,6 @@ func New(cfg *config.Config, fs *storage.FileStore) *Handler {
 		return keys
 	}())
 
-	// Create player
-	p, err := player.New(fs)
-	if err != nil {
-		log.Fatalf("Failed to create player: %v", err)
-	}
-
 	// Create station manager
 	sm := station.NewManager(fs, cfg.StationConfigDir)
 
@@ -171,20 +165,19 @@ func New(cfg *config.Config, fs *storage.FileStore) *Handler {
 	return &Handler{
 		config:         cfg,
 		fileStore:      fs,
-		player:         p,
 		stationManager: sm,
 		analyticsStore: analyticsStore,
 		templates:      templates,
+		// Remove player reference - we don't need it anymore
 	}
 }
 
 func (h *Handler) HomePage(w http.ResponseWriter, r *http.Request) {
 	log.Println("Rendering home page template")
 
-	h.mu.RLock()
-	currentEpisode := h.stationManager.GetCurrentEpisode()
-	recentEpisodes := h.stationManager.GetRecentlyPlayed()
-	h.mu.RUnlock()
+	// Use "all" station as default for homepage
+	currentEpisode := h.stationManager.GetCurrentEpisode("all")
+	recentEpisodes := h.stationManager.GetRecentlyPlayed("all")
 
 	data := map[string]interface{}{
 		"Title":          "McElroy Radio - Where the goofs never end!",
@@ -454,18 +447,21 @@ func parseRange(rangeHeader string, fileSize int64) (start, end int64, err error
 	return start, end, nil
 }
 
-// StreamAudio handles streaming audio to the client with proper Range support
+// StreamAudio now takes a station parameter
 func (h *Handler) StreamAudio(w http.ResponseWriter, r *http.Request) {
-	log.Printf("New audio stream request from %s", r.RemoteAddr)
+	// Get the requested station from query parameter
+	stationID := r.URL.Query().Get("station")
+	if stationID == "" {
+		stationID = "all" // Default to all shows
+	}
 
-	// Get current episode from station manager instead of fileStore
-	h.mu.RLock()
-	currentEpisode := h.stationManager.GetCurrentEpisode()
-	h.mu.RUnlock()
+	log.Printf("New audio stream request for station '%s' from %s", stationID, r.RemoteAddr)
 
+	// Get current episode from the requested station
+	currentEpisode := h.stationManager.GetCurrentEpisode(stationID)
 	if currentEpisode == nil {
-		log.Printf("No current episode available")
-		http.Error(w, "No audio available", http.StatusNotFound)
+		log.Printf("No current episode available for station: %s", stationID)
+		http.Error(w, "No audio available for this station", http.StatusNotFound)
 		return
 	}
 
@@ -496,22 +492,17 @@ func (h *Handler) StreamAudio(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if this is a "radio sync" request (no range header on first request)
-	// In this case, we want to start from the server's current position
+	// Get station's current time position for sync
 	if rangeHeader == "" {
-		// Get server's current time position from station manager
-		serverTimePosition := h.stationManager.GetCurrentTimePosition()
+		serverTimePosition := h.stationManager.GetCurrentTimePosition(stationID)
 		if serverTimePosition > 0 && currentEpisode.Duration > 0 {
 			// Estimate byte position based on time
-			// For MP3: rough calculation is fileSize / duration * currentTime
 			estimatedBytePos := int64(float64(fileSize) * (serverTimePosition / currentEpisode.Duration))
-
-			// Align to a reasonable boundary (every 1KB) to avoid cutting mid-frame
-			estimatedBytePos = (estimatedBytePos / 1024) * 1024
+			estimatedBytePos = (estimatedBytePos / 1024) * 1024 // Align to 1KB boundary
 
 			if estimatedBytePos > 0 && estimatedBytePos < fileSize {
 				start = estimatedBytePos
-				log.Printf("Radio sync: starting from byte %d (time %.2fs)", start, serverTimePosition)
+				log.Printf("Station %s sync: starting from byte %d (time %.2fs)", stationID, start, serverTimePosition)
 			}
 		}
 	}
@@ -530,12 +521,12 @@ func (h *Handler) StreamAudio(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, fileSize))
 		w.Header().Set("Content-Length", strconv.FormatInt(contentLength, 10))
 		w.WriteHeader(http.StatusPartialContent)
-		log.Printf("Serving partial content: bytes %d-%d/%d", start, end, fileSize)
+		log.Printf("Serving partial content for station %s: bytes %d-%d/%d", stationID, start, end, fileSize)
 	} else {
 		// Full content response (but potentially starting from middle)
 		w.Header().Set("Content-Length", strconv.FormatInt(contentLength, 10))
 		w.WriteHeader(http.StatusOK)
-		log.Printf("Serving content from byte %d, length %d", start, contentLength)
+		log.Printf("Serving content for station %s from byte %d, length %d", stationID, start, contentLength)
 	}
 
 	// Seek to start position
@@ -594,43 +585,23 @@ func (h *Handler) StreamAudio(w http.ResponseWriter, r *http.Request) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	log.Printf("Successfully streamed %d bytes to client", written)
+	log.Printf("Successfully streamed %d bytes to client for station %s", written, stationID)
 }
 
+// Update StationList to return all stations (no current station concept)
 func (h *Handler) StationList(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	stations := h.stationManager.GetAllStations()
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"stations":        stations,
-		"current_station": h.stationManager.GetCurrentStationID(),
-	})
-}
-
-func (h *Handler) SwitchStation(w http.ResponseWriter, r *http.Request) {
-	stationID := r.URL.Query().Get("id")
-	if stationID == "" {
-		http.Error(w, "Station ID required", http.StatusBadRequest)
-		return
-	}
-
-	success := h.stationManager.SwitchToStation(stationID)
-	if !success {
-		http.Error(w, "Station not found", http.StatusNotFound)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":    true,
-		"station_id": stationID,
-		"message":    "Switched station successfully",
+		"stations": stations,
+		// Remove current_station - it's client-side only now
 	})
 }
 
 func (h *Handler) StationInfo(w http.ResponseWriter, r *http.Request) {
 	stationID := r.URL.Query().Get("id")
 	if stationID == "" {
-		stationID = h.stationManager.GetCurrentStationID()
+		stationID = "all" // Default to all shows
 	}
 
 	station := h.stationManager.GetStation(stationID)
@@ -644,20 +615,24 @@ func (h *Handler) StationInfo(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) StreamPosition(w http.ResponseWriter, r *http.Request) {
+	stationID := r.URL.Query().Get("station")
+	if stationID == "" {
+		stationID = "all" // Default
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("Expires", "0")
 
-	streamInfo := h.player.GetStreamInfo()
-	currentEpisode := h.stationManager.GetCurrentEpisode()
+	currentEpisode := h.stationManager.GetCurrentEpisode(stationID)
 
 	response := map[string]interface{}{
-		"position":       h.stationManager.GetCurrentPosition(),
-		"time_position":  h.stationManager.GetCurrentTimePosition(),
-		"timestamp":      time.Now().Unix(),
-		"is_playing":     streamInfo["is_playing"],
-		"listener_count": h.player.GetListenerCount(),
+		"station":       stationID,
+		"position":      h.stationManager.GetCurrentPosition(stationID),
+		"time_position": h.stationManager.GetCurrentTimePosition(stationID),
+		"timestamp":     time.Now().Unix(),
+		"is_playing":    true, // All stations are always playing
 	}
 
 	if currentEpisode != nil {
@@ -696,30 +671,18 @@ func (h *Handler) ServeManifest(w http.ResponseWriter, r *http.Request) {
 
 // Updated NowPlaying handler in handlers.go
 func (h *Handler) NowPlaying(w http.ResponseWriter, r *http.Request) {
+	stationID := r.URL.Query().Get("station")
+	if stationID == "" {
+		stationID = "all" // Default
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 
-	// Check if this is a forced refresh (from station switching)
-	forceRefresh := r.URL.Query().Get("force") != ""
-
-	if forceRefresh {
-		// Add no-cache headers for forced refresh
-		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-		w.Header().Set("Pragma", "no-cache")
-		w.Header().Set("Expires", "0")
-		log.Printf("NowPlaying: Force refresh requested")
-	}
-
-	h.mu.RLock()
-	currentEpisode := h.stationManager.GetCurrentEpisode()
-	h.mu.RUnlock()
-
+	currentEpisode := h.stationManager.GetCurrentEpisode(stationID)
 	if currentEpisode == nil {
-		http.Error(w, "No episode currently playing", http.StatusNotFound)
+		http.Error(w, "No episode currently playing on this station", http.StatusNotFound)
 		return
 	}
-
-	// Include stream information
-	streamInfo := h.player.GetStreamInfo()
 
 	// Create response with both episode and stream info
 	response := map[string]interface{}{
@@ -738,20 +701,11 @@ func (h *Handler) NowPlaying(w http.ResponseWriter, r *http.Request) {
 		"random_fact":  currentEpisode.RandomFact,
 		"file_size":    currentEpisode.FileSize,
 
-		// Stream info
-		"current_position": h.stationManager.GetCurrentPosition(),
-		"time_position":    h.stationManager.GetCurrentTimePosition(),
-		"is_playing":       streamInfo["is_playing"],
-		"listener_count":   h.player.GetListenerCount(),
-
-		// Add station info for debugging
-		"station_id": h.stationManager.GetCurrentStationID(),
-		"timestamp":  time.Now().Unix(),
-	}
-
-	if forceRefresh {
-		log.Printf("NowPlaying: Serving fresh episode data - %s (%s)",
-			currentEpisode.Title, currentEpisode.ShowName)
+		// Stream info for this station
+		"station_id":       stationID,
+		"current_position": h.stationManager.GetCurrentPosition(stationID),
+		"time_position":    h.stationManager.GetCurrentTimePosition(stationID),
+		"is_playing":       true, // All stations always playing
 	}
 
 	json.NewEncoder(w).Encode(response)
@@ -759,12 +713,14 @@ func (h *Handler) NowPlaying(w http.ResponseWriter, r *http.Request) {
 
 // RecentlyPlayed returns the recently played episodes
 func (h *Handler) RecentlyPlayed(w http.ResponseWriter, r *http.Request) {
+	stationID := r.URL.Query().Get("station")
+	if stationID == "" {
+		stationID = "all" // Default
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 
-	h.mu.RLock()
-	recentEpisodes := h.stationManager.GetRecentlyPlayed()
-	h.mu.RUnlock()
-
+	recentEpisodes := h.stationManager.GetRecentlyPlayed(stationID)
 	json.NewEncoder(w).Encode(recentEpisodes)
 }
 
