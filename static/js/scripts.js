@@ -2035,7 +2035,7 @@ class StationManager {
 
   async switchToStation(stationId) {
     try {
-      console.log("🎵 Switching to station:", stationId);
+      console.log("🎵 Client-side switching to station:", stationId);
 
       // Show immediate feedback with loading state
       if (this.globalRadioPlayer && this.globalRadioPlayer.showNotification) {
@@ -2051,34 +2051,33 @@ class StationManager {
       // *** STEP 1: Immediately start the episode info update process ***
       this.prepareForStationSwitch();
 
-      const response = await fetch(`/switch-station?id=${stationId}`, {
-        method: "POST",
-      });
+      // *** STEP 2: Update current station ID immediately ***
+      this.currentStationId = stationId;
+      this.renderStations(); // Re-render to update active state
 
-      if (response.ok) {
-        const data = await response.json();
-        console.log("🎵 Station switch response:", data);
+      // *** STEP 3: Refresh audio stream with new station parameter ***
+      this.refreshAudioForNewStation();
 
-        this.currentStationId = stationId;
-        this.renderStations(); // Re-render to update active state
+      // *** STEP 4: Force immediate episode info update ***
+      this.triggerImmediateEpisodeUpdate();
 
-        // *** STEP 2: Refresh audio stream ***
-        this.refreshAudioForNewStation();
-
-        // *** STEP 3: Force immediate episode info update ***
-        this.triggerImmediateEpisodeUpdate();
-        setTimeout(() => {
-          this.hideStationSwitchLoading();
-        }, 2000);
-      } else {
-        const errorText = await response.text();
+      // Hide loading state after a brief delay
+      setTimeout(() => {
         this.hideStationSwitchLoading();
-        throw new Error(
-          `Failed to switch station: ${response.status} - ${errorText}`,
-        );
+      }, 2000);
+
+      // Success notification
+      if (this.globalRadioPlayer && this.globalRadioPlayer.showNotification) {
+        setTimeout(() => {
+          this.globalRadioPlayer.showNotification(
+            `Now playing: ${this.getStationName(stationId)}`,
+            "success",
+          );
+        }, 1500);
       }
     } catch (error) {
       console.error("🎵 Error switching station:", error);
+      this.hideStationSwitchLoading();
       if (this.globalRadioPlayer && this.globalRadioPlayer.showNotification) {
         this.globalRadioPlayer.showNotification(
           "Failed to switch station: " + error.message,

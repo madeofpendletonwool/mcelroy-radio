@@ -2,8 +2,10 @@ package storage
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -37,8 +39,60 @@ func NewAnalyticsStore(dataDir string) *AnalyticsStore {
 	return store
 }
 
-// RecordVisit records a new visit
+// isLocalIP checks if an IP address is local/private
+func (as *AnalyticsStore) isLocalIP(ipStr string) bool {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return false
+	}
+
+	// Check for loopback
+	if ip.IsLoopback() {
+		return true
+	}
+
+	// Check for private IP ranges
+	if ip.IsPrivate() {
+		return true
+	}
+
+	// Additional local checks
+	if ipStr == "127.0.0.1" || ipStr == "::1" || ipStr == "localhost" {
+		return true
+	}
+
+	// Check for Docker internal IPs and other common local ranges
+	localRanges := []string{
+		"172.17.0.0/16",  // Docker default bridge
+		"172.18.0.0/16",  // Docker custom bridges
+		"172.19.0.0/16",  // Docker custom bridges
+		"172.20.0.0/16",  // Docker custom bridges
+		"169.254.0.0/16", // Link-local
+		"::1/128",        // IPv6 loopback
+		"fe80::/10",      // IPv6 link-local
+	}
+
+	for _, rangeStr := range localRanges {
+		_, cidr, err := net.ParseCIDR(rangeStr)
+		if err != nil {
+			continue
+		}
+		if cidr.Contains(ip) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// RecordVisit records a new visit (filtering out local IPs)
 func (as *AnalyticsStore) RecordVisit(ip, path, userAgent string) {
+	// Skip recording if it's a local IP
+	if as.isLocalIP(ip) {
+		log.Printf("Skipping analytics for local IP: %s", ip)
+		return
+	}
+
 	as.mutex.Lock()
 	defer as.mutex.Unlock()
 
@@ -105,6 +159,129 @@ func (as *AnalyticsStore) GetSummary() models.AnalyticsSummary {
 	}
 
 	return summary
+}
+
+// GetTimeSeriesData returns visit data for different time periods
+func (as *AnalyticsStore) GetTimeSeriesData(period string) map[string]interface{} {
+	as.mutex.RLock()
+	defer as.mutex.RUnlock()
+
+	now := time.Now()
+	data := make(map[string]int)
+
+	var cutoff time.Time
+	var formatStr string
+
+	switch period {
+	case "hour":
+		cutoff = now.Add(-24 * time.Hour)
+		formatStr = "15:04" // HH:MM format
+
+		// Initialize all hours in the last 24 hours
+		for i := 0; i < 24; i++ {
+			t := now.Add(time.Duration(-i) * time.Hour)
+			key := t.Format(formatStr)
+			data[key] = 0
+		}
+
+	case "day":
+		cutoff = now.AddDate(0, 0, -30)
+		formatStr = "2006-01-02" // YYYY-MM-DD format
+
+		// Initialize all days in the last 30 days
+		for i := 0; i < 30; i++ {
+			t := now.AddDate(0, 0, -i)
+			key := t.Format(formatStr)
+			data[key] = 0
+		}
+
+	case "week":
+		cutoff = now.AddDate(0, 0, -84) // 12 weeks
+		formatStr = "2006-W02"          // Year-Week format
+
+		// Initialize all weeks in the last 12 weeks
+		for i := 0; i < 12; i++ {
+			t := now.AddDate(0, 0, -i*7)
+			year, week := t.ISOWeek()
+			key := fmt.Sprintf("%d-W%02d", year, week)
+			data[key] = 0
+		}
+
+	case "month":
+		cutoff = now.AddDate(-1, 0, 0) // 12 months
+		formatStr = "2006-01"          // YYYY-MM format
+
+		// Initialize all months in the last 12 months
+		for i := 0; i < 12; i++ {
+			t := now.AddDate(0, -i, 0)
+			key := t.Format(formatStr)
+			data[key] = 0
+		}
+
+	default:
+		cutoff = now.Add(-24 * time.Hour)
+		formatStr = "15:04"
+	}
+
+	// Count visits
+	for _, visit := range as.visits {
+		if visit.Timestamp.After(cutoff) {
+			var key string
+
+			switch period {
+			case "week":
+				year, week := visit.Timestamp.ISOWeek()
+				key = fmt.Sprintf("%d-W%02d", year, week)
+			default:
+				key = visit.Timestamp.Format(formatStr)
+			}
+
+			data[key]++
+		}
+	}
+
+	// Convert to slice format for chart.js
+	var labels []string
+	var values []int
+
+	// Sort keys and create ordered arrays
+	switch period {
+	case "hour":
+		for i := 23; i >= 0; i-- {
+			t := now.Add(time.Duration(-i) * time.Hour)
+			key := t.Format(formatStr)
+			labels = append(labels, key)
+			values = append(values, data[key])
+		}
+	case "day":
+		for i := 29; i >= 0; i-- {
+			t := now.AddDate(0, 0, -i)
+			key := t.Format(formatStr)
+			labels = append(labels, key)
+			values = append(values, data[key])
+		}
+	case "week":
+		for i := 11; i >= 0; i-- {
+			t := now.AddDate(0, 0, -i*7)
+			year, week := t.ISOWeek()
+			key := fmt.Sprintf("%d-W%02d", year, week)
+			labels = append(labels, key)
+			values = append(values, data[key])
+		}
+	case "month":
+		for i := 11; i >= 0; i-- {
+			t := now.AddDate(0, -i, 0)
+			key := t.Format(formatStr)
+			labels = append(labels, key)
+			values = append(values, data[key])
+		}
+	}
+
+	return map[string]interface{}{
+		"labels": labels,
+		"data":   values,
+		"period": period,
+	}
 }
 
 // GetRecentVisits returns recent visits

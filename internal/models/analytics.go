@@ -36,7 +36,7 @@ func GetRegionFromIP(ipStr string) string {
 
 	// Check for local/private IPs
 	if ip.IsLoopback() || ip.IsPrivate() {
-		return "Local"
+		return "Local (Healthchecks)"
 	}
 
 	// Very basic geographic determination based on IP ranges
