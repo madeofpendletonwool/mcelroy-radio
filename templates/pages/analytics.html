@@ -1,11 +1,11 @@
 {{ define "content" }}
 <div class="container analytics-container">
-    <header class="analytics-header">
+    <section class="analytics-header">
         <h1><i class="fas fa-chart-bar"></i> McElroy Radio Analytics</h1>
         <p class="analytics-subtitle">
-            Simple, privacy-friendly visitor metrics
+            Simple, privacy-friendly visitor metrics (excluding local traffic)
         </p>
-    </header>
+    </section>
 
     <!-- Quick Stats -->
     <section class="analytics-overview">
@@ -31,6 +31,52 @@
                 <div class="stat-value">{{ len .Summary.RegionBreakdown }}</div>
                 <div class="stat-label">Regions</div>
                 <div class="stat-icon"><i class="fas fa-globe"></i></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Interactive Time Series Chart -->
+    <section class="analytics-timeseries">
+        <div class="chart-card">
+            <div class="chart-header">
+                <h3>
+                    <i class="fas fa-chart-line"></i> Visitor Traffic Over Time
+                </h3>
+                <div class="chart-controls">
+                    <button class="period-btn active" data-period="hour">
+                        <i class="fas fa-clock"></i> Last 24 Hours
+                    </button>
+                    <button class="period-btn" data-period="day">
+                        <i class="fas fa-calendar-day"></i> Last 30 Days
+                    </button>
+                    <button class="period-btn" data-period="week">
+                        <i class="fas fa-calendar-week"></i> Last 12 Weeks
+                    </button>
+                    <button class="period-btn" data-period="month">
+                        <i class="fas fa-calendar"></i> Last 12 Months
+                    </button>
+                </div>
+            </div>
+            <div class="chart-container">
+                <canvas id="timeSeriesChart" width="400" height="200"></canvas>
+                <div id="chart-loading" class="chart-loading">
+                    <div class="loading-spinner"></div>
+                    <span>Loading chart data...</span>
+                </div>
+            </div>
+            <div class="chart-stats">
+                <div class="chart-stat">
+                    <span class="stat-label">Total in Period:</span>
+                    <span class="stat-value" id="period-total">-</span>
+                </div>
+                <div class="chart-stat">
+                    <span class="stat-label">Average per Period:</span>
+                    <span class="stat-value" id="period-average">-</span>
+                </div>
+                <div class="chart-stat">
+                    <span class="stat-label">Peak:</span>
+                    <span class="stat-value" id="period-peak">-</span>
+                </div>
             </div>
         </div>
     </section>
@@ -121,13 +167,12 @@
     <!-- Privacy Note -->
     <section class="analytics-privacy">
         <div class="privacy-note">
-            <h4>
-                <i class="fas fa-shield-alt"></i> Privacy-Friendly Analytics
-            </h4>
+            <h4><i class="fas fa-info-circle"></i> A note on local hits</h4>
             <p>
                 We collect only basic, anonymous metrics: approximate region
                 (continent-level), browser type, and pages visited. No personal
-                information, IP addresses, or tracking cookies are stored.
+                information, IP addresses, or tracking cookies are stored. Local
+                traffic is excluded from these statistics.
             </p>
         </div>
     </section>
@@ -141,19 +186,32 @@
     }
 
     .analytics-header {
-        text-align: center;
+        background-color: var(--surface-color);
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow);
+        padding: 30px;
         margin-bottom: 40px;
+        text-align: center;
+        position: relative;
+        border: 1px solid var(--border-color);
+        /* Ensure it doesn't overlap with theme dropdown */
+        z-index: 1;
     }
 
     .analytics-header h1 {
         color: var(--primary-color);
         font-size: 2.5rem;
         margin-bottom: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 15px;
     }
 
     .analytics-subtitle {
         color: var(--text-muted);
         font-size: 1.1rem;
+        margin: 0;
     }
 
     /* Stats Overview */
@@ -196,6 +254,138 @@
         font-size: 1.5rem;
         color: var(--secondary-color);
         opacity: 0.7;
+    }
+
+    /* Time Series Chart */
+    .analytics-timeseries {
+        margin-bottom: 40px;
+    }
+
+    .chart-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        flex-wrap: wrap;
+        gap: 15px;
+    }
+
+    .chart-header h3 {
+        color: var(--primary-color);
+        margin: 0;
+        font-size: 1.4rem;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .chart-controls {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    .period-btn {
+        background: var(--surface-color);
+        border: 2px solid var(--border-color);
+        color: var(--text-color);
+        padding: 8px 12px;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+    }
+
+    .period-btn:hover {
+        border-color: var(--primary-color);
+        color: var(--primary-color);
+        transform: translateY(-1px);
+    }
+
+    .period-btn.active {
+        background: var(--primary-color);
+        border-color: var(--primary-color);
+        color: white;
+    }
+
+    .chart-container {
+        position: relative;
+        background: var(--surface-color);
+        border-radius: var(--border-radius);
+        padding: 25px;
+        border: 1px solid var(--border-color);
+        box-shadow: var(--shadow);
+        height: 400px;
+        margin-bottom: 15px;
+    }
+
+    .chart-loading {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(255, 255, 255, 0.9);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 15px;
+        border-radius: var(--border-radius);
+        z-index: 10;
+        transition: opacity 0.3s ease;
+    }
+
+    [data-theme="dark"] .chart-loading {
+        background: rgba(15, 23, 42, 0.9);
+    }
+
+    .chart-loading.hidden {
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+    }
+
+    .loading-spinner {
+        width: 40px;
+        height: 40px;
+        border: 3px solid var(--border-color);
+        border-top: 3px solid var(--primary-color);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    .chart-stats {
+        display: flex;
+        justify-content: space-around;
+        background: var(--background-color);
+        border-radius: var(--border-radius);
+        padding: 15px;
+        border: 1px solid var(--border-color);
+    }
+
+    .chart-stat {
+        text-align: center;
+    }
+
+    .chart-stat .stat-label {
+        display: block;
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        margin-bottom: 5px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .chart-stat .stat-value {
+        font-size: 1.2rem;
+        font-weight: bold;
+        color: var(--primary-color);
     }
 
     /* Charts */
@@ -363,6 +553,33 @@
         margin: 0;
     }
 
+    /* Theme dropdown z-index fix */
+    .theme-dropdown {
+        z-index: 1001 !important;
+    }
+
+    /* Responsive header adjustments */
+    @media (max-width: 768px) {
+        .analytics-header h1 {
+            font-size: 2rem;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .analytics-header h1 i {
+            font-size: 2.5rem;
+        }
+    }
+
+    @keyframes spin {
+        0% {
+            transform: rotate(0deg);
+        }
+        100% {
+            transform: rotate(360deg);
+        }
+    }
+
     /* Mobile Responsive */
     @media (max-width: 768px) {
         .analytics-container {
@@ -379,6 +596,32 @@
             gap: 20px;
         }
 
+        .chart-header {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .chart-controls {
+            width: 100%;
+            justify-content: center;
+        }
+
+        .period-btn {
+            flex: 1;
+            min-width: 0;
+            justify-content: center;
+        }
+
+        .chart-container {
+            height: 300px;
+            padding: 15px;
+        }
+
+        .chart-stats {
+            flex-direction: column;
+            gap: 10px;
+        }
+
         .table-header,
         .table-row {
             grid-template-columns: 1fr;
@@ -387,7 +630,7 @@
         }
 
         .table-header {
-            display: none; /* Hide header on mobile, show labels inline */
+            display: none;
         }
 
         .table-row {
@@ -403,21 +646,6 @@
             font-weight: 600;
             color: var(--primary-color);
         }
-    }
-
-    /* Loading animation for live updates */
-    @keyframes pulse {
-        0%,
-        100% {
-            opacity: 1;
-        }
-        50% {
-            opacity: 0.7;
-        }
-    }
-
-    .loading {
-        animation: pulse 1.5s infinite;
     }
 
     /* Hover effects */
@@ -445,10 +673,339 @@
     }
 </style>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
 <script>
-    // Auto-refresh analytics data every 30 seconds
+    // Time Series Chart Manager
+    class TimeSeriesChart {
+        constructor() {
+            this.chart = null;
+            this.currentPeriod = "hour";
+            this.canvas = document.getElementById("timeSeriesChart");
+            this.loadingEl = document.getElementById("chart-loading");
+            this.ctx = this.canvas.getContext("2d");
+
+            this.init();
+        }
+
+        init() {
+            this.setupEventListeners();
+            this.loadData("hour");
+        }
+
+        setupEventListeners() {
+            document.querySelectorAll(".period-btn").forEach((btn) => {
+                btn.addEventListener("click", (e) => {
+                    const period = e.target.dataset.period;
+                    this.switchPeriod(period);
+                });
+            });
+        }
+
+        switchPeriod(period) {
+            if (period === this.currentPeriod) return;
+
+            // Update button states
+            document.querySelectorAll(".period-btn").forEach((btn) => {
+                btn.classList.toggle("active", btn.dataset.period === period);
+            });
+
+            this.currentPeriod = period;
+            this.loadData(period);
+        }
+
+        showLoading() {
+            this.loadingEl.classList.remove("hidden");
+        }
+
+        hideLoading() {
+            this.loadingEl.classList.add("hidden");
+        }
+
+        async loadData(period) {
+            try {
+                this.showLoading();
+
+                const response = await fetch(
+                    `/analytics-api?type=timeseries&period=${period}`,
+                );
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+                const data = await response.json();
+                this.updateChart(data);
+                this.updateStats(data);
+            } catch (error) {
+                console.error("Failed to load time series data:", error);
+                this.showError("Failed to load chart data");
+            } finally {
+                this.hideLoading();
+            }
+        }
+
+        updateChart(data) {
+            const { labels, data: values, period } = data;
+
+            // Destroy existing chart
+            if (this.chart) {
+                this.chart.destroy();
+            }
+
+            // Configure chart based on period
+            const config = this.getChartConfig(labels, values, period);
+
+            // Create new chart
+            this.chart = new Chart(this.ctx, config);
+        }
+
+        getChartConfig(labels, values, period) {
+            const maxValue = Math.max(...values);
+            const suggestedMax = Math.max(maxValue + 2, 10);
+
+            // Format labels based on period
+            const formattedLabels = this.formatLabels(labels, period);
+
+            return {
+                type: "line",
+                data: {
+                    labels: formattedLabels,
+                    datasets: [
+                        {
+                            label: this.getPeriodLabel(period),
+                            data: values,
+                            borderColor: getComputedStyle(
+                                document.documentElement,
+                            )
+                                .getPropertyValue("--primary-color")
+                                .trim(),
+                            backgroundColor:
+                                getComputedStyle(document.documentElement)
+                                    .getPropertyValue("--primary-color")
+                                    .trim() + "20",
+                            borderWidth: 3,
+                            fill: true,
+                            tension: 0.4,
+                            pointBackgroundColor: getComputedStyle(
+                                document.documentElement,
+                            )
+                                .getPropertyValue("--primary-color")
+                                .trim(),
+                            pointBorderColor: "#ffffff",
+                            pointBorderWidth: 2,
+                            pointRadius: 4,
+                            pointHoverRadius: 6,
+                        },
+                    ],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        intersect: false,
+                        mode: "index",
+                    },
+                    plugins: {
+                        legend: {
+                            display: false,
+                        },
+                        tooltip: {
+                            backgroundColor: getComputedStyle(
+                                document.documentElement,
+                            )
+                                .getPropertyValue("--surface-color")
+                                .trim(),
+                            titleColor: getComputedStyle(
+                                document.documentElement,
+                            )
+                                .getPropertyValue("--text-color")
+                                .trim(),
+                            bodyColor: getComputedStyle(
+                                document.documentElement,
+                            )
+                                .getPropertyValue("--text-color")
+                                .trim(),
+                            borderColor: getComputedStyle(
+                                document.documentElement,
+                            )
+                                .getPropertyValue("--border-color")
+                                .trim(),
+                            borderWidth: 1,
+                            cornerRadius: 8,
+                            displayColors: false,
+                            callbacks: {
+                                title: (context) => {
+                                    const label = labels[context[0].dataIndex];
+                                    return this.formatTooltipTitle(
+                                        label,
+                                        period,
+                                    );
+                                },
+                                label: (context) => {
+                                    const value = context.parsed.y;
+                                    const unit =
+                                        value === 1 ? "visit" : "visits";
+                                    return `${value} ${unit}`;
+                                },
+                            },
+                        },
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            suggestedMax: suggestedMax,
+                            ticks: {
+                                stepSize: 1,
+                                color: getComputedStyle(
+                                    document.documentElement,
+                                )
+                                    .getPropertyValue("--text-muted")
+                                    .trim(),
+                                callback: function (value) {
+                                    return Number.isInteger(value) ? value : "";
+                                },
+                            },
+                            grid: {
+                                color: getComputedStyle(
+                                    document.documentElement,
+                                )
+                                    .getPropertyValue("--border-color")
+                                    .trim(),
+                                borderColor: getComputedStyle(
+                                    document.documentElement,
+                                )
+                                    .getPropertyValue("--border-color")
+                                    .trim(),
+                            },
+                        },
+                        x: {
+                            ticks: {
+                                color: getComputedStyle(
+                                    document.documentElement,
+                                )
+                                    .getPropertyValue("--text-muted")
+                                    .trim(),
+                                maxTicksLimit: period === "hour" ? 12 : 8,
+                                callback: function (value, index) {
+                                    const label = this.getLabelForValue(value);
+                                    return period === "day"
+                                        ? new Date(label).toLocaleDateString(
+                                              "en-US",
+                                              {
+                                                  month: "short",
+                                                  day: "numeric",
+                                              },
+                                          )
+                                        : label;
+                                },
+                            },
+                            grid: {
+                                color: getComputedStyle(
+                                    document.documentElement,
+                                )
+                                    .getPropertyValue("--border-color")
+                                    .trim(),
+                                borderColor: getComputedStyle(
+                                    document.documentElement,
+                                )
+                                    .getPropertyValue("--border-color")
+                                    .trim(),
+                            },
+                        },
+                    },
+                    elements: {
+                        point: {
+                            hoverBackgroundColor: getComputedStyle(
+                                document.documentElement,
+                            )
+                                .getPropertyValue("--secondary-color")
+                                .trim(),
+                        },
+                    },
+                },
+            };
+        }
+
+        formatLabels(labels, period) {
+            switch (period) {
+                case "hour":
+                    return labels; // Already in HH:MM format
+                case "day":
+                    return labels.map((label) => {
+                        const date = new Date(label);
+                        return date.toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                        });
+                    });
+                case "week":
+                    return labels.map((label) =>
+                        label.replace(/(\d{4})-W(\d{2})/, "Week $2"),
+                    );
+                case "month":
+                    return labels.map((label) => {
+                        const date = new Date(label + "-01");
+                        return date.toLocaleDateString("en-US", {
+                            month: "short",
+                            year: "numeric",
+                        });
+                    });
+                default:
+                    return labels;
+            }
+        }
+
+        formatTooltipTitle(label, period) {
+            switch (period) {
+                case "hour":
+                    return `${label} today`;
+                case "day":
+                    return new Date(label).toLocaleDateString("en-US", {
+                        weekday: "long",
+                        month: "long",
+                        day: "numeric",
+                    });
+                case "week":
+                    return `Week ${label.split(" ")[1]}`;
+                case "month":
+                    return new Date(label + "-01").toLocaleDateString("en-US", {
+                        month: "long",
+                        year: "numeric",
+                    });
+                default:
+                    return label;
+            }
+        }
+
+        getPeriodLabel(period) {
+            const labels = {
+                hour: "Visits per Hour",
+                day: "Visits per Day",
+                week: "Visits per Week",
+                month: "Visits per Month",
+            };
+            return labels[period] || "Visits";
+        }
+
+        updateStats(data) {
+            const values = data.data;
+            const total = values.reduce((sum, val) => sum + val, 0);
+            const average =
+                values.length > 0 ? (total / values.length).toFixed(1) : 0;
+            const peak = Math.max(...values);
+
+            document.getElementById("period-total").textContent = total;
+            document.getElementById("period-average").textContent = average;
+            document.getElementById("period-peak").textContent = peak;
+        }
+
+        showError(message) {
+            // You could implement a nicer error display here
+            console.error(message);
+        }
+    }
+
+    // Auto-refresh functionality
     document.addEventListener("DOMContentLoaded", function () {
         let refreshInterval;
+        let timeSeriesChart;
 
         function startAutoRefresh() {
             refreshInterval = setInterval(refreshAnalytics, 30000);
@@ -459,11 +1016,29 @@
             const statCards = document.querySelectorAll(".stat-card");
             statCards.forEach((card) => card.classList.add("loading"));
 
-            fetch("/analytics-api")
-                .then((response) => response.json())
-                .then((data) => {
+            Promise.all([
+                fetch("/analytics-api"),
+                timeSeriesChart
+                    ? fetch(
+                          `/analytics-api?type=timeseries&period=${timeSeriesChart.currentPeriod}`,
+                      )
+                    : Promise.resolve(null),
+            ])
+                .then(([summaryResponse, timeSeriesResponse]) => {
+                    return Promise.all([
+                        summaryResponse.json(),
+                        timeSeriesResponse ? timeSeriesResponse.json() : null,
+                    ]);
+                })
+                .then(([summaryData, timeSeriesData]) => {
                     // Update stats
-                    updateStats(data);
+                    updateStats(summaryData);
+
+                    // Update time series chart
+                    if (timeSeriesChart && timeSeriesData) {
+                        timeSeriesChart.updateChart(timeSeriesData);
+                        timeSeriesChart.updateStats(timeSeriesData);
+                    }
 
                     // Remove loading indicator
                     statCards.forEach((card) =>
@@ -481,7 +1056,6 @@
         }
 
         function updateStats(data) {
-            // Update stat values
             const statValues = document.querySelectorAll(".stat-value");
             if (statValues[0]) statValues[0].textContent = data.total_visits;
             if (statValues[1]) statValues[1].textContent = data.today_visits;
@@ -490,9 +1064,10 @@
                 statValues[3].textContent = Object.keys(
                     data.region_breakdown,
                 ).length;
-
-            // You could also update charts here if needed
         }
+
+        // Initialize time series chart
+        timeSeriesChart = new TimeSeriesChart();
 
         // Start auto-refresh
         startAutoRefresh();

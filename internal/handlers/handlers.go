@@ -758,19 +758,6 @@ func (h *Handler) StreamHealth(w http.ResponseWriter, r *http.Request) {
 
 // AnalyticsPage serves the analytics dashboard
 func (h *Handler) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
-	// Get password from environment, default to "mcelroyradio"
-	expectedPassword := os.Getenv("ANALYTICS_PASSWORD")
-	if expectedPassword == "" {
-		expectedPassword = "mcelroyradio"
-	}
-
-	username, password, ok := r.BasicAuth()
-	if !ok || username != "admin" || password != expectedPassword {
-		w.Header().Set("WWW-Authenticate", `Basic realm="Analytics Dashboard"`)
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	summary := h.analyticsStore.GetSummary()
 	recentVisits := h.analyticsStore.GetRecentVisits(50)
 
@@ -804,19 +791,6 @@ func (h *Handler) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 
 // AnalyticsAPI returns analytics data as JSON
 func (h *Handler) AnalyticsAPI(w http.ResponseWriter, r *http.Request) {
-	// Get password from environment, default to "mcelroyradio"
-	expectedPassword := os.Getenv("ANALYTICS_PASSWORD")
-	if expectedPassword == "" {
-		expectedPassword = "mcelroyradio"
-	}
-
-	username, password, ok := r.BasicAuth()
-	if !ok || username != "admin" || password != expectedPassword {
-		w.Header().Set("WWW-Authenticate", `Basic realm="Analytics API"`)
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 
 	dataType := r.URL.Query().Get("type")
@@ -833,6 +807,29 @@ func (h *Handler) AnalyticsAPI(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"visits": recentVisits,
 		})
+
+	case "timeseries":
+		period := r.URL.Query().Get("period")
+		if period == "" {
+			period = "hour" // default to hourly
+		}
+
+		// Validate period
+		validPeriods := map[string]bool{
+			"hour":  true,
+			"day":   true,
+			"week":  true,
+			"month": true,
+		}
+
+		if !validPeriods[period] {
+			http.Error(w, "Invalid period. Must be one of: hour, day, week, month", http.StatusBadRequest)
+			return
+		}
+
+		timeSeriesData := h.analyticsStore.GetTimeSeriesData(period)
+		json.NewEncoder(w).Encode(timeSeriesData)
+
 	default:
 		summary := h.analyticsStore.GetSummary()
 		json.NewEncoder(w).Encode(summary)
