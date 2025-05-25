@@ -866,7 +866,7 @@ class GlobalRadioPlayer {
     this.updateLoadingStatus(this.LoadingStates.FETCHING_POSITION);
 
     // Get server position for current station
-    fetch(`/stream-position?station=${this.currentStationId}`)
+    fetch(`/stream-position?station=${this.currentStationId}&t=${Date.now()}`)
       .then((response) => response.json())
       .then((data) => {
         const serverTimePosition = data.time_position || 0;
@@ -890,13 +890,17 @@ class GlobalRadioPlayer {
             handleLoadedMetadata,
           );
 
-          // Seek to server position
+          // CRITICAL: Seek to server position for proper sync
           if (serverTimePosition > 0 && this.audioPlayer.duration) {
             const seekPosition = Math.min(
               serverTimePosition,
               this.audioPlayer.duration - 1,
             );
-            console.log("Seeking to position:", seekPosition, "seconds");
+            console.log(
+              "Initial sync - seeking to position:",
+              seekPosition,
+              "seconds",
+            );
             this.audioPlayer.currentTime = seekPosition;
           }
 
@@ -905,7 +909,10 @@ class GlobalRadioPlayer {
           if (playPromise !== undefined) {
             playPromise
               .then(() => {
-                console.log("Autoplay started successfully");
+                console.log(
+                  "Autoplay started successfully at position:",
+                  this.audioPlayer.currentTime,
+                );
                 this.setStreamReady(true);
                 this.showNotification(
                   "McElroy Radio is now playing!",
@@ -2093,6 +2100,23 @@ class StationManager {
     const currentMuted = audioPlayer.muted;
 
     try {
+      // FIRST: Get the station's current time position from server
+      console.log("🎵 Getting station position from server...");
+      const positionResponse = await fetch(
+        `/stream-position?station=${stationId}&t=${Date.now()}`,
+      );
+      if (!positionResponse.ok) {
+        throw new Error(
+          `Failed to get station position: ${positionResponse.status}`,
+        );
+      }
+
+      const positionData = await positionResponse.json();
+      const serverTimePosition = positionData.time_position || 0;
+      console.log(
+        `🎵 Station ${stationId} server position: ${serverTimePosition}s`,
+      );
+
       // Stop current playback
       if (!audioPlayer.paused) {
         audioPlayer.pause();
@@ -2103,11 +2127,23 @@ class StationManager {
       console.log("🎵 New station stream URL:", streamUrl);
 
       // Set up event handlers for the new stream
-      const onCanPlay = () => {
-        console.log("🎵 New station stream ready");
-        audioPlayer.removeEventListener("canplay", onCanPlay);
+      const onLoadedMetadata = () => {
+        console.log("🎵 New station stream metadata loaded");
+        audioPlayer.removeEventListener("loadedmetadata", onLoadedMetadata);
         audioPlayer.removeEventListener("error", onError);
         clearTimeout(timeoutId);
+
+        // CRITICAL: Seek to server's current position for this station
+        if (serverTimePosition > 0 && audioPlayer.duration) {
+          const seekPosition = Math.min(
+            serverTimePosition,
+            audioPlayer.duration - 1,
+          );
+          console.log(
+            `🎵 Seeking to station position: ${seekPosition}s (duration: ${audioPlayer.duration}s)`,
+          );
+          audioPlayer.currentTime = seekPosition;
+        }
 
         // Restore audio settings
         audioPlayer.volume = currentVolume;
@@ -2118,7 +2154,10 @@ class StationManager {
           audioPlayer
             .play()
             .then(() => {
-              console.log("🎵 Successfully resumed playback on new station");
+              console.log(
+                "🎵 Successfully resumed playback on new station at position",
+                audioPlayer.currentTime,
+              );
               if (
                 this.globalRadioPlayer &&
                 this.globalRadioPlayer.showNotification
@@ -2156,7 +2195,7 @@ class StationManager {
 
       const onError = (error) => {
         console.error("🎵 Error loading new station stream:", error);
-        audioPlayer.removeEventListener("canplay", onCanPlay);
+        audioPlayer.removeEventListener("loadedmetadata", onLoadedMetadata);
         audioPlayer.removeEventListener("error", onError);
         clearTimeout(timeoutId);
 
@@ -2171,7 +2210,7 @@ class StationManager {
       // Set up timeout
       const timeoutId = setTimeout(() => {
         console.log("🎵 Station switch timeout");
-        audioPlayer.removeEventListener("canplay", onCanPlay);
+        audioPlayer.removeEventListener("loadedmetadata", onLoadedMetadata);
         audioPlayer.removeEventListener("error", onError);
 
         if (this.globalRadioPlayer && this.globalRadioPlayer.showNotification) {
@@ -2180,10 +2219,12 @@ class StationManager {
             "info",
           );
         }
-      }, 5000);
+      }, 10000); // Increased timeout for metadata loading
 
       // Add event listeners
-      audioPlayer.addEventListener("canplay", onCanPlay, { once: true });
+      audioPlayer.addEventListener("loadedmetadata", onLoadedMetadata, {
+        once: true,
+      });
       audioPlayer.addEventListener("error", onError, { once: true });
 
       // Switch to new stream
@@ -2218,21 +2259,35 @@ class StationManager {
         show: data.show_name,
       });
 
-      // Update the UI with new episode info
-      if (
-        this.globalRadioPlayer &&
-        this.globalRadioPlayer.updateUIWithEpisodeData
-      ) {
-        this.globalRadioPlayer.updateUIWithEpisodeData(data);
-        this.globalRadioPlayer.currentEpisodeId = data.id;
+      // Direct DOM updates - this is what was missing
+      const elements = [
+        { id: "player-episode-title", value: data.title },
+        { id: "player-show-name", value: data.show_name },
+        { id: "episode-title", value: data.title },
+        { id: "show-name", value: data.show_name },
+        { id: "random-fact", value: data.random_fact },
+      ];
+
+      elements.forEach(({ id, value }) => {
+        const el = document.getElementById(id);
+        if (el && value) {
+          el.textContent = value;
+        }
+      });
+
+      // Update images
+      const playerCover = document.getElementById("player-episode-cover");
+      const homeCover = document.getElementById("episode-cover-art");
+      if (playerCover && data.image_path) {
+        playerCover.src = data.image_path;
+      }
+      if (homeCover && data.image_path) {
+        homeCover.src = data.image_path;
       }
 
-      // Update media session
-      if (
-        this.globalRadioPlayer &&
-        this.globalRadioPlayer.updateMediaSessionMetadata
-      ) {
-        this.globalRadioPlayer.updateMediaSessionMetadata(data);
+      // Update global player state
+      if (this.globalRadioPlayer) {
+        this.globalRadioPlayer.currentEpisodeId = data.id;
       }
     } catch (error) {
       console.error("🎵 Failed to update episode info:", error);
