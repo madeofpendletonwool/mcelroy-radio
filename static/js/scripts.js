@@ -363,6 +363,7 @@ class GlobalRadioPlayer {
   // Add this method to your GlobalRadioPlayer class:
   bindPageSpecificElements() {
     console.log("🔧 Binding page-specific elements...");
+    this.initializeEpisodePlayButtons();
 
     // Rebind page-specific functionality like the random fact button
     const newFactBtn = document.getElementById("new-fact-btn");
@@ -1699,6 +1700,132 @@ class GlobalRadioPlayer {
         this.loadingTimeout = null;
       }
     }
+  }
+
+  // Add this method to stream a specific episode
+  async streamSpecificEpisode(episodeId, episodeTitle = null) {
+    console.log("🎵 Streaming specific episode:", episodeId);
+
+    if (!this.audioPlayer) {
+      console.error("🎵 No audio player available for episode streaming");
+      this.showNotification("Audio player not available", "error");
+      return;
+    }
+
+    // Show loading state
+    this.showLoadingOverlay();
+    this.updateLoadingStatus("Loading episode...");
+
+    try {
+      // Get episode details
+      const response = await fetch(
+        `/episode-details?id=${encodeURIComponent(episodeId)}`,
+      );
+      if (!response.ok) {
+        throw new Error(`Failed to get episode details: ${response.status}`);
+      }
+
+      const episode = await response.json();
+      console.log("🎵 Episode details:", episode);
+
+      // Store current state
+      const wasPlaying = !this.audioPlayer.paused;
+
+      // Pause current playback
+      if (wasPlaying) {
+        this.audioPlayer.pause();
+      }
+
+      // Create direct episode stream URL
+      const streamUrl = `/stream-episode?id=${encodeURIComponent(episodeId)}&t=${Date.now()}`;
+
+      // Update UI immediately with episode info
+      this.updateUIWithEpisodeData(episode);
+      this.updateMediaSessionMetadata(episode);
+
+      // Set up the new audio source
+      this.audioPlayer.src = streamUrl;
+      this.audioPlayer.currentTime = 0;
+
+      // Update player state
+      this.currentEpisodeId = episode.id;
+
+      // Auto-play the episode
+      const playPromise = this.audioPlayer.play();
+      if (playPromise) {
+        playPromise
+          .then(() => {
+            console.log("🎵 Successfully started episode playback");
+            this.setStreamReady(true);
+            this.showNotification(`Now playing: ${episode.title}`, "success");
+          })
+          .catch((error) => {
+            console.log(
+              "🎵 Episode playback requires user interaction:",
+              error,
+            );
+            this.setStreamReady(true);
+            this.showNotification(
+              "Episode loaded! Click play to start listening.",
+              "info",
+            );
+          });
+      } else {
+        this.setStreamReady(true);
+      }
+    } catch (error) {
+      console.error("🎵 Failed to stream episode:", error);
+      this.hideLoadingOverlay();
+      this.showNotification(
+        "Failed to load episode: " + error.message,
+        "error",
+      );
+    }
+  }
+
+  // Add method to get episode play button HTML
+  static getEpisodePlayButtonHTML(
+    episodeId,
+    episodeTitle = null,
+    size = "normal",
+  ) {
+    const sizeClass = size === "small" ? "btn-small" : "";
+    const iconSize = size === "small" ? "fa-sm" : "";
+
+    return `
+      <button
+        class="btn btn-primary episode-play-btn ${sizeClass}"
+        data-episode-id="${episodeId}"
+        data-episode-title="${episodeTitle || ""}"
+        title="Play this episode"
+      >
+        <i class="fas fa-play ${iconSize}"></i>
+        ${size === "small" ? "" : "Play"}
+      </button>
+    `;
+  }
+
+  // Add method to initialize episode play buttons on the page
+  initializeEpisodePlayButtons() {
+    console.log("🎵 Initializing episode play buttons");
+
+    // Find all episode play buttons and add click handlers
+    document.addEventListener("click", (event) => {
+      const playBtn = event.target.closest(".episode-play-btn");
+      if (!playBtn) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const episodeId = playBtn.dataset.episodeId;
+      const episodeTitle = playBtn.dataset.episodeTitle;
+
+      if (episodeId) {
+        this.streamSpecificEpisode(episodeId, episodeTitle);
+      }
+    });
+
+    console.log("🎵 Episode play buttons initialized");
   }
 
   // Add this method to your GlobalRadioPlayer class if it doesn't exist:

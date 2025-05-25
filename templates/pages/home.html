@@ -138,11 +138,30 @@
                             >{{ formatTime .PlayedAt }}</time
                         >
                     </p>
+                    <!-- NEW: Episode Play Button for Recently Played -->
+                    <div class="episode-actions">
+                        <button
+                            class="btn btn-primary episode-play-btn"
+                            data-episode-id="{{ .ID }}"
+                            data-episode-title="{{ .Title }}"
+                            title="Play this episode again"
+                        >
+                            <i class="fas fa-play"></i> Play Again
+                        </button>
+                    </div>
                 </div>
             </div>
             {{ end }} {{ else }}
             <p>No recently played episodes yet. Stay tuned!</p>
             {{ end }}
+        </div>
+    </section>
+
+    <section class="radio-decoration">
+        <div class="radio-waves">
+            <div class="wave wave1"></div>
+            <div class="wave wave2"></div>
+            <div class="wave wave3"></div>
         </div>
     </section>
 </div>
@@ -208,32 +227,6 @@
 
     .station-card.active .station-playing {
         display: flex !important;
-    }
-
-    /* Station switching animations */
-    .station-card.switching-out {
-        opacity: 0.5;
-        transform: scale(0.95);
-        border-color: var(--text-muted);
-        transition: all 0.3s ease;
-    }
-
-    .station-card.switching-in {
-        border-color: var(--primary-color);
-        box-shadow: 0 0 20px rgba(94, 96, 206, 0.3);
-        animation: station-switching 1.5s ease-in-out infinite;
-    }
-
-    @keyframes station-switching {
-        0%,
-        100% {
-            border-color: var(--primary-color);
-            box-shadow: 0 0 20px rgba(94, 96, 206, 0.3);
-        }
-        50% {
-            border-color: var(--secondary-color);
-            box-shadow: 0 0 25px rgba(100, 223, 223, 0.4);
-        }
     }
 
     .station-header {
@@ -334,6 +327,161 @@
         animation: radio-waves 2s infinite;
     }
 
+    /* Recently Played Section with Play Button Support */
+    .recently-played {
+        background-color: var(--surface-color);
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow);
+        padding: 25px;
+        margin-bottom: 30px;
+        border: 1px solid var(--border-color);
+    }
+
+    .recently-played h2 {
+        display: flex;
+        align-items: center;
+        color: var(--primary-color);
+        margin-bottom: 20px;
+        font-size: 1.3rem;
+    }
+
+    .recently-played h2 i {
+        margin-right: 8px;
+    }
+
+    .episode-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 20px;
+    }
+
+    .episode-card.small {
+        flex-direction: column;
+        height: 100%;
+        background-color: var(--background-color);
+        border-radius: var(--border-radius);
+        overflow: hidden;
+        transition: all 0.3s ease;
+        border: 2px solid var(--border-color);
+    }
+
+    .episode-card.small:hover {
+        transform: translateY(-3px);
+        border-color: var(--secondary-color);
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+    }
+
+    .episode-card.small .episode-image {
+        flex: 0 0 auto;
+        width: 100%;
+        height: 150px;
+    }
+
+    .episode-card.small .episode-image img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: transform 0.3s ease;
+    }
+
+    .episode-card.small:hover .episode-image img {
+        transform: scale(1.05);
+    }
+
+    .episode-card.small .episode-details {
+        padding: 15px;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .episode-card.small .episode-details h4 {
+        font-size: 1.1rem;
+        margin-bottom: 5px;
+        color: var(--text-color);
+        line-height: 1.3;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
+    .episode-card.small .show-name {
+        font-size: 0.9rem;
+        color: var(--text-muted);
+        margin-bottom: 8px;
+    }
+
+    .episode-card.small .play-time {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        margin-bottom: 15px;
+    }
+
+    .episode-card.small .episode-actions {
+        margin-top: auto;
+        padding-top: 10px;
+        border-top: 1px solid var(--border-color);
+    }
+
+    .episode-card.small .episode-play-btn {
+        width: 100%;
+        justify-content: center;
+        background: linear-gradient(
+            135deg,
+            var(--primary-color),
+            var(--secondary-color)
+        );
+        color: white;
+        border: none;
+        padding: 10px 16px;
+        border-radius: 20px;
+        font-size: 0.9rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .episode-card.small .episode-play-btn::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, 0.3),
+            transparent
+        );
+        transition: left 0.5s;
+    }
+
+    .episode-card.small .episode-play-btn:hover::before {
+        left: 100%;
+    }
+
+    .episode-card.small .episode-play-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(94, 96, 206, 0.4);
+    }
+
+    .episode-card.small .episode-play-btn i {
+        transition: transform 0.3s ease;
+    }
+
+    .episode-card.small .episode-play-btn:hover i {
+        transform: scale(1.2);
+    }
+
     @keyframes pulse {
         0%,
         100% {
@@ -388,6 +536,16 @@
             flex-direction: column;
             align-items: flex-start;
             gap: 8px;
+        }
+
+        .episode-grid {
+            grid-template-columns: 1fr;
+            gap: 15px;
+        }
+
+        .episode-card.small .episode-play-btn {
+            padding: 8px 12px;
+            font-size: 0.8rem;
         }
     }
 </style>
