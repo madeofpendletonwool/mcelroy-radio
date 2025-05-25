@@ -44,6 +44,15 @@ class GlobalRadioPlayer {
     };
 
     console.log("🎵 Global Radio Player initialized");
+    this.currentStationId = this.getSavedStation() || "all";
+  }
+
+  getSavedStation() {
+    return localStorage.getItem("mcElroyRadioStation");
+  }
+
+  saveStation(stationId) {
+    localStorage.setItem("mcElroyRadioStation", stationId);
   }
 
   init() {
@@ -830,6 +839,7 @@ class GlobalRadioPlayer {
     });
   }
 
+  // Update initializeAudio to use current station
   initializeAudio() {
     if (!this.audioPlayer) return;
 
@@ -855,16 +865,21 @@ class GlobalRadioPlayer {
 
     this.updateLoadingStatus(this.LoadingStates.FETCHING_POSITION);
 
-    // Get server position and initialize stream
-    fetch("/stream-position")
+    // Get server position for current station
+    fetch(`/stream-position?station=${this.currentStationId}&t=${Date.now()}`)
       .then((response) => response.json())
       .then((data) => {
         const serverTimePosition = data.time_position || 0;
         this.updateLoadingStatus(this.LoadingStates.LOADING_STREAM);
 
-        const streamUrl = `/stream?t=${Date.now()}`;
+        const streamUrl = `/stream?station=${this.currentStationId}&t=${Date.now()}`;
 
-        console.log("Setting audio source:", streamUrl);
+        console.log(
+          "Setting audio source for station",
+          this.currentStationId,
+          ":",
+          streamUrl,
+        );
         console.log("Server position:", serverTimePosition, "seconds");
 
         this.audioPlayer.src = streamUrl;
@@ -875,13 +890,17 @@ class GlobalRadioPlayer {
             handleLoadedMetadata,
           );
 
-          // Seek to server position
+          // CRITICAL: Seek to server position for proper sync
           if (serverTimePosition > 0 && this.audioPlayer.duration) {
             const seekPosition = Math.min(
               serverTimePosition,
               this.audioPlayer.duration - 1,
             );
-            console.log("Seeking to position:", seekPosition, "seconds");
+            console.log(
+              "Initial sync - seeking to position:",
+              seekPosition,
+              "seconds",
+            );
             this.audioPlayer.currentTime = seekPosition;
           }
 
@@ -890,7 +909,10 @@ class GlobalRadioPlayer {
           if (playPromise !== undefined) {
             playPromise
               .then(() => {
-                console.log("Autoplay started successfully");
+                console.log(
+                  "Autoplay started successfully at position:",
+                  this.audioPlayer.currentTime,
+                );
                 this.setStreamReady(true);
                 this.showNotification(
                   "McElroy Radio is now playing!",
@@ -1241,19 +1263,20 @@ class GlobalRadioPlayer {
     }, 1500); // Much shorter than before
   }
 
+  // Update checkForNewEpisode to include station parameter
   checkForNewEpisode(forceUpdate = false) {
-    // Add an abort controller for faster timeouts
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
 
-    // FIXED: Proper URL construction
     const cacheBuster = forceUpdate
       ? `?force=${Date.now()}&cb=${Math.random()}`
       : `?t=${Date.now()}`;
-    const url = `/now-playing${cacheBuster}`;
+
+    // Include current station in the request
+    const url = `/now-playing${cacheBuster}&station=${this.currentStationId}`;
 
     console.log(
-      `🎵 Checking for new episode${forceUpdate ? " (FORCED)" : ""}: ${url}`,
+      `🎵 Checking for new episode on station ${this.currentStationId}${forceUpdate ? " (FORCED)" : ""}: ${url}`,
     );
 
     fetch(url, {
@@ -1275,18 +1298,21 @@ class GlobalRadioPlayer {
         return response.json();
       })
       .then((data) => {
-        console.log("🎵 Episode data received:", {
-          id: data.id,
-          title: data.title?.substring(0, 50) + "...",
-          show: data.show_name,
-          currentId: this.currentEpisodeId,
-          isNewEpisode: data.id !== this.currentEpisodeId,
-          forceUpdate: forceUpdate,
-          stationId: data.station_id,
-        });
+        console.log(
+          "🎵 Episode data received for station",
+          this.currentStationId,
+          ":",
+          {
+            id: data.id,
+            title: data.title?.substring(0, 50) + "...",
+            show: data.show_name,
+            currentId: this.currentEpisodeId,
+            isNewEpisode: data.id !== this.currentEpisodeId,
+            forceUpdate: forceUpdate,
+            stationId: data.station_id,
+          },
+        );
 
-        // For forced updates, ALWAYS update UI regardless of episode ID
-        // For normal updates, only update if episode ID changed
         const shouldUpdate =
           forceUpdate || (data.id && data.id !== this.currentEpisodeId);
 
@@ -1302,8 +1328,13 @@ class GlobalRadioPlayer {
           this.updateMediaSessionMetadata(data);
 
           // Only update audio source if needed and not during a forced update
-          if (!forceUpdate && !this.audioPlayer.src.includes("/stream")) {
-            const streamUrl = `/stream?t=${Date.now()}`;
+          if (
+            !forceUpdate &&
+            !this.audioPlayer.src.includes(
+              `/stream?station=${this.currentStationId}`,
+            )
+          ) {
+            const streamUrl = `/stream?station=${this.currentStationId}&t=${Date.now()}`;
             this.audioPlayer.src = streamUrl;
             this.audioPlayer.currentTime = 0;
 
@@ -1311,25 +1342,9 @@ class GlobalRadioPlayer {
               this.audioPlayer.play().catch(console.error);
             }
           }
-        } else if (data.id === this.currentEpisodeId && !forceUpdate) {
-          // Same episode - sync position if significantly off
-          const serverTime = data.time_position || 0;
-          const clientTime = this.audioPlayer.currentTime || 0;
-          const timeDiff = Math.abs(serverTime - clientTime);
-
-          if (
-            timeDiff > 10 &&
-            this.audioPlayer.duration &&
-            serverTime < this.audioPlayer.duration
-          ) {
-            console.log(
-              `🎵 Resyncing: server=${serverTime}s, client=${clientTime}s, diff=${timeDiff}s`,
-            );
-            this.audioPlayer.currentTime = serverTime;
-          }
         }
 
-        // ALWAYS update UI with latest data for forced updates
+        // Always update UI with latest data for forced updates
         if (forceUpdate) {
           this.updateUIWithEpisodeData(data);
         }
@@ -1903,7 +1918,7 @@ class StationManager {
   constructor(globalRadioPlayer) {
     this.globalRadioPlayer = globalRadioPlayer;
     this.stations = [];
-    this.currentStationId = "all";
+    this.currentStationId = this.getSavedStation() || "all"; // Client-side only
     this.stationsGrid = null;
     this.currentStationName = null;
 
@@ -1912,14 +1927,19 @@ class StationManager {
       hasAudioPlayer: !!(
         this.globalRadioPlayer && this.globalRadioPlayer.audioPlayer
       ),
-      hasForceEpisodeUpdate: !!(
-        this.globalRadioPlayer &&
-        typeof this.globalRadioPlayer.forceEpisodeUpdate === "function"
-      ),
       playerType: this.globalRadioPlayer
         ? this.globalRadioPlayer.constructor.name
         : "none",
+      savedStation: this.currentStationId,
     });
+  }
+
+  getSavedStation() {
+    return localStorage.getItem("mcElroyRadioStation");
+  }
+
+  saveStation(stationId) {
+    localStorage.setItem("mcElroyRadioStation", stationId);
   }
 
   async init() {
@@ -1950,10 +1970,13 @@ class StationManager {
       const data = await response.json();
 
       this.stations = data.stations || [];
-      this.currentStationId = data.current_station || "all";
+      // No server current station anymore - use client-side saved station
 
       console.log("🎵 Loaded stations:", this.stations);
-      console.log("🎵 Current station ID:", this.currentStationId);
+      console.log(
+        "🎵 Current station ID (client-side):",
+        this.currentStationId,
+      );
     } catch (error) {
       console.error("🎵 Error loading stations:", error);
       // Show fallback stations
@@ -2034,411 +2057,107 @@ class StationManager {
   }
 
   async switchToStation(stationId) {
-    try {
-      console.log("🎵 Switching to station:", stationId);
+    console.log("🎵 CLIENT-SIDE station switch to:", stationId);
 
-      // Show immediate feedback with loading state
+    // Show immediate feedback
+    if (this.globalRadioPlayer && this.globalRadioPlayer.showNotification) {
+      this.globalRadioPlayer.showNotification(
+        `Tuning to ${this.getStationName(stationId)}...`,
+        "info",
+      );
+    }
+
+    // Update client-side state immediately
+    this.currentStationId = stationId;
+    this.saveStation(stationId);
+    this.renderStations(); // Re-render to update active state
+
+    // Switch the audio stream to the new station
+    await this.switchAudioToStation(stationId);
+
+    // Update episode info for the new station
+    await this.updateEpisodeInfoForStation(stationId);
+  }
+
+  async switchAudioToStation(stationId) {
+    console.log("🎵 Switching audio stream to station:", stationId);
+
+    const audioPlayer = this.getAudioPlayer();
+    if (!audioPlayer) {
+      console.error("🎵 No audio player found for station switch");
       if (this.globalRadioPlayer && this.globalRadioPlayer.showNotification) {
         this.globalRadioPlayer.showNotification(
-          `Tuning to ${this.getStationName(stationId)}...`,
-          "info",
-        );
-      }
-
-      // Show station switching loading state
-      this.showStationSwitchLoading(stationId);
-
-      // *** STEP 1: Immediately start the episode info update process ***
-      this.prepareForStationSwitch();
-
-      const response = await fetch(`/switch-station?id=${stationId}`, {
-        method: "POST",
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        console.log("🎵 Station switch response:", data);
-
-        this.currentStationId = stationId;
-        this.renderStations(); // Re-render to update active state
-
-        // *** STEP 2: Refresh audio stream ***
-        this.refreshAudioForNewStation();
-
-        // *** STEP 3: Force immediate episode info update ***
-        this.triggerImmediateEpisodeUpdate();
-        setTimeout(() => {
-          this.hideStationSwitchLoading();
-        }, 2000);
-      } else {
-        const errorText = await response.text();
-        this.hideStationSwitchLoading();
-        throw new Error(
-          `Failed to switch station: ${response.status} - ${errorText}`,
-        );
-      }
-    } catch (error) {
-      console.error("🎵 Error switching station:", error);
-      if (this.globalRadioPlayer && this.globalRadioPlayer.showNotification) {
-        this.globalRadioPlayer.showNotification(
-          "Failed to switch station: " + error.message,
+          "Audio player not found. Please refresh the page.",
           "error",
         );
       }
-    }
-  }
-
-  // *** NEW: Show visual loading state during station switch ***
-  showStationSwitchLoading(stationId) {
-    console.log("🎵 Showing station switch loading state");
-
-    // Show loading overlay on global player
-    if (this.globalRadioPlayer) {
-      if (this.globalRadioPlayer.loadingOverlay) {
-        this.globalRadioPlayer.loadingOverlay.classList.remove("hidden");
-      }
-      if (this.globalRadioPlayer.loadingStatus) {
-        this.globalRadioPlayer.loadingStatus.textContent = `Switching to ${this.getStationName(stationId)}...`;
-      }
-    }
-
-    // Add loading state to episode info
-    const episodeTitle = document.getElementById("player-episode-title");
-    const showName = document.getElementById("player-show-name");
-
-    if (episodeTitle) {
-      episodeTitle.textContent = "Loading new station...";
-      episodeTitle.style.opacity = "0.6";
-    }
-
-    if (showName) {
-      showName.textContent = this.getStationName(stationId);
-      showName.style.opacity = "0.6";
-    }
-
-    // Add loading animation to station cards
-    const currentCard = document.querySelector(
-      `.station-card[data-station-id="${this.currentStationId}"]`,
-    );
-    const newCard = document.querySelector(
-      `.station-card[data-station-id="${stationId}"]`,
-    );
-
-    if (currentCard) {
-      currentCard.classList.add("switching-out");
-    }
-
-    if (newCard) {
-      newCard.classList.add("switching-in");
-    }
-  }
-
-  // *** NEW: Hide loading state after station switch ***
-  hideStationSwitchLoading() {
-    console.log("🎵 Hiding station switch loading state");
-
-    // Hide loading overlay
-    if (this.globalRadioPlayer && this.globalRadioPlayer.loadingOverlay) {
-      this.globalRadioPlayer.loadingOverlay.classList.add("hidden");
-    }
-
-    // Remove loading opacity from episode info
-    const episodeTitle = document.getElementById("player-episode-title");
-    const showName = document.getElementById("player-show-name");
-
-    if (episodeTitle) {
-      episodeTitle.style.opacity = "1";
-    }
-
-    if (showName) {
-      showName.style.opacity = "1";
-    }
-
-    // Remove loading animations from station cards
-    document.querySelectorAll(".station-card").forEach((card) => {
-      card.classList.remove("switching-out", "switching-in");
-    });
-  }
-
-  // *** NEW: Prepare for station switch ***
-  prepareForStationSwitch() {
-    console.log("🎵 Preparing for station switch - clearing episode cache");
-
-    if (this.globalRadioPlayer) {
-      // Clear the current episode ID to force recognition as new
-      this.globalRadioPlayer.currentEpisodeId = null;
-    }
-  }
-
-  // *** NEW: Trigger immediate episode update with multiple attempts ***
-  triggerImmediateEpisodeUpdate() {
-    console.log("🎵 Triggering immediate episode info update");
-
-    if (!this.globalRadioPlayer) {
-      console.warn("🎵 No global radio player available for episode update");
       return;
     }
-
-    // Method 1: Use the force update method if available
-    if (typeof this.globalRadioPlayer.forceEpisodeUpdate === "function") {
-      console.log("🎵 Using forceEpisodeUpdate method");
-      this.globalRadioPlayer.forceEpisodeUpdate();
-    }
-
-    // Method 2: Direct force calls to checkForNewEpisode
-    if (typeof this.globalRadioPlayer.checkForNewEpisode === "function") {
-      console.log("🎵 Making immediate forced episode check calls");
-
-      // Immediate call
-      this.globalRadioPlayer.checkForNewEpisode(true);
-
-      // Follow-up calls at different intervals
-      setTimeout(() => {
-        console.log("🎵 Episode update attempt 2 (500ms)");
-        this.globalRadioPlayer.checkForNewEpisode(true);
-      }, 500);
-
-      setTimeout(() => {
-        console.log("🎵 Episode update attempt 3 (1000ms)");
-        this.globalRadioPlayer.checkForNewEpisode(true);
-      }, 1000);
-
-      setTimeout(() => {
-        console.log("🎵 Episode update attempt 4 (2000ms)");
-        this.globalRadioPlayer.checkForNewEpisode(true);
-      }, 2000);
-    }
-
-    // Method 3: Direct fetch as backup
-    this.directEpisodeInfoFetch();
-  }
-
-  directEpisodeInfoFetch() {
-    console.log("🎵 Making direct episode info fetch as backup");
-
-    const url = `/now-playing?force=${Date.now()}&direct=true`;
-
-    fetch(url, {
-      cache: "no-store",
-      headers: {
-        "Cache-Control": "no-cache, no-store, must-revalidate",
-        Pragma: "no-cache",
-        Expires: "0",
-      },
-    })
-      .then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.json();
-      })
-      .then((data) => {
-        console.log("🎵 Direct fetch episode data received:", {
-          id: data.id,
-          title: data.title?.substring(0, 50) + "...",
-          show: data.show_name,
-          stationId: data.station_id,
-        });
-
-        // Debug the globalRadioPlayer object
-        console.log("🎵 Debugging globalRadioPlayer:", {
-          exists: !!this.globalRadioPlayer,
-          type: this.globalRadioPlayer
-            ? this.globalRadioPlayer.constructor.name
-            : "none",
-          hasUpdateMethod: !!(
-            this.globalRadioPlayer &&
-            this.globalRadioPlayer.updateUIWithEpisodeData
-          ),
-          methodType: this.globalRadioPlayer
-            ? typeof this.globalRadioPlayer.updateUIWithEpisodeData
-            : "none",
-          allMethods: this.globalRadioPlayer
-            ? Object.getOwnPropertyNames(
-                Object.getPrototypeOf(this.globalRadioPlayer),
-              )
-            : [],
-        });
-
-        // Try to update the UI directly
-        if (this.globalRadioPlayer) {
-          console.log("🎵 Global radio player exists, attempting UI update");
-
-          // Force set the current episode ID to null so it always updates
-          const previousId = this.globalRadioPlayer.currentEpisodeId;
-          this.globalRadioPlayer.currentEpisodeId = null;
-
-          // Try calling the method directly
-          try {
-            if (this.globalRadioPlayer.updateUIWithEpisodeData) {
-              console.log("🎵 Calling updateUIWithEpisodeData directly");
-              this.globalRadioPlayer.updateUIWithEpisodeData(data);
-            } else {
-              console.log(
-                "🎵 updateUIWithEpisodeData method not found, trying manual update",
-              );
-              this.manualUIUpdate(data);
-            }
-
-            // Update media session
-            if (this.globalRadioPlayer.updateMediaSessionMetadata) {
-              this.globalRadioPlayer.updateMediaSessionMetadata(data);
-            }
-
-            // Set the new current episode ID
-            this.globalRadioPlayer.currentEpisodeId = data.id;
-
-            console.log(
-              "🎵 Direct fetch UI update completed - episode info should be visible now",
-            );
-
-            // Show success notification
-            if (this.globalRadioPlayer.showNotification) {
-              this.globalRadioPlayer.showNotification(
-                `Now playing: ${data.title} - ${data.show_name}`,
-                "success",
-              );
-            }
-          } catch (error) {
-            console.error("🎵 Error during UI update:", error);
-            this.manualUIUpdate(data);
-          }
-        } else {
-          console.error("🎵 Global radio player not available");
-        }
-      })
-      .catch((err) => {
-        console.error("🎵 Direct episode fetch failed:", err);
-      });
-  }
-
-  manualUIUpdate(data) {
-    console.log("🎵 Performing manual UI update");
-
-    // Update global player bar elements
-    const episodeTitle = document.getElementById("player-episode-title");
-    const showName = document.getElementById("player-show-name");
-    const episodeCover = document.getElementById("player-episode-cover");
-
-    if (episodeTitle && data.title) {
-      episodeTitle.textContent = data.title;
-      console.log("🎵 Updated player episode title");
-    }
-
-    if (showName && data.show_name) {
-      showName.textContent = data.show_name;
-      console.log("🎵 Updated player show name");
-    }
-
-    if (episodeCover && data.image_path) {
-      episodeCover.src = data.image_path;
-      episodeCover.alt = `${data.show_name} Cover Art`;
-      console.log("🎵 Updated player episode cover");
-    }
-
-    // Update homepage elements if they exist
-    const homeEpisodeTitle = document.getElementById("episode-title");
-    const homeShowName = document.getElementById("show-name");
-    const homeEpisodeCover = document.getElementById("episode-cover-art");
-    const homeRandomFact = document.getElementById("random-fact");
-
-    if (homeEpisodeTitle && data.title) {
-      homeEpisodeTitle.textContent = data.title;
-      console.log("🎵 Updated home episode title");
-    }
-
-    if (homeShowName && data.show_name) {
-      homeShowName.textContent = data.show_name;
-      console.log("🎵 Updated home show name");
-    }
-
-    if (homeEpisodeCover && data.image_path) {
-      homeEpisodeCover.src = data.image_path;
-      homeEpisodeCover.alt = `${data.show_name} Cover Art`;
-      console.log("🎵 Updated home episode cover");
-    }
-
-    if (homeRandomFact && data.random_fact) {
-      homeRandomFact.textContent = data.random_fact;
-      console.log("🎵 Updated random fact");
-    }
-
-    // Update page title
-    if (data.title && data.show_name) {
-      document.title = `${data.title} - ${data.show_name} | McElroy Radio`;
-      console.log("🎵 Updated page title");
-    }
-
-    console.log("🎵 Manual UI update completed");
-  }
-
-  refreshAudioForNewStation() {
-    console.log("🎵 Refreshing audio for new station");
-
-    const audioPlayer = this.getAudioPlayer();
-
-    if (!audioPlayer) {
-      console.error(
-        "🎵 Could not find audio player, trying page reload approach",
-      );
-      this.fallbackToPageReload();
-      return;
-    }
-
-    console.log("🎵 Audio player found, refreshing stream...");
 
     // Store current state
     const wasPlaying = !audioPlayer.paused;
     const currentVolume = audioPlayer.volume;
     const currentMuted = audioPlayer.muted;
 
-    // Temporarily disable error logging for expected errors during stream switch
-    const originalErrorHandler = audioPlayer.onerror;
-    let switchingStream = true;
-
-    audioPlayer.onerror = (e) => {
-      if (switchingStream) {
-        console.log("🎵 Expected audio error during stream switch (ignoring)");
-        return;
+    try {
+      // FIRST: Get the station's current time position from server
+      console.log("🎵 Getting station position from server...");
+      const positionResponse = await fetch(
+        `/stream-position?station=${stationId}&t=${Date.now()}`,
+      );
+      if (!positionResponse.ok) {
+        throw new Error(
+          `Failed to get station position: ${positionResponse.status}`,
+        );
       }
-      if (originalErrorHandler) {
-        originalErrorHandler(e);
+
+      const positionData = await positionResponse.json();
+      const serverTimePosition = positionData.time_position || 0;
+      console.log(
+        `🎵 Station ${stationId} server position: ${serverTimePosition}s`,
+      );
+
+      // Stop current playback
+      if (!audioPlayer.paused) {
+        audioPlayer.pause();
       }
-    };
 
-    // Stop current playback gracefully
-    if (!audioPlayer.paused) {
-      audioPlayer.pause();
-    }
-    audioPlayer.currentTime = 0;
+      // Create new stream URL with station parameter
+      const streamUrl = `/stream?station=${stationId}&t=${Date.now()}`;
+      console.log("🎵 New station stream URL:", streamUrl);
 
-    // Create new stream URL with timestamp and station to avoid caching
-    const streamUrl = `/stream?t=${Date.now()}&station=${this.currentStationId}`;
-    console.log("🎵 New stream URL:", streamUrl);
+      // Set up event handlers for the new stream
+      const onLoadedMetadata = () => {
+        console.log("🎵 New station stream metadata loaded");
+        audioPlayer.removeEventListener("loadedmetadata", onLoadedMetadata);
+        audioPlayer.removeEventListener("error", onError);
+        clearTimeout(timeoutId);
 
-    const onCanPlay = () => {
-      console.log("🎵 New station stream can play");
-      audioPlayer.removeEventListener("canplay", onCanPlay);
-      audioPlayer.removeEventListener("error", onError);
-      clearTimeout(timeoutId);
+        // CRITICAL: Seek to server's current position for this station
+        if (serverTimePosition > 0 && audioPlayer.duration) {
+          const seekPosition = Math.min(
+            serverTimePosition,
+            audioPlayer.duration - 1,
+          );
+          console.log(
+            `🎵 Seeking to station position: ${seekPosition}s (duration: ${audioPlayer.duration}s)`,
+          );
+          audioPlayer.currentTime = seekPosition;
+        }
 
-      // Restore audio settings
-      audioPlayer.volume = currentVolume;
-      audioPlayer.muted = currentMuted;
+        // Restore audio settings
+        audioPlayer.volume = currentVolume;
+        audioPlayer.muted = currentMuted;
 
-      // Re-enable normal error handling
-      switchingStream = false;
-      audioPlayer.onerror = originalErrorHandler;
-
-      console.log("🎵 New station stream ready");
-
-      // Try to resume playback if it was playing before
-      if (wasPlaying) {
-        const playPromise = audioPlayer.play();
-        if (playPromise) {
-          playPromise
+        // Try to resume playback if it was playing
+        if (wasPlaying) {
+          audioPlayer
+            .play()
             .then(() => {
-              console.log("🎵 Resumed playback on new station");
-
-              // Success notification
+              console.log(
+                "🎵 Successfully resumed playback on new station at position",
+                audioPlayer.currentTime,
+              );
               if (
                 this.globalRadioPlayer &&
                 this.globalRadioPlayer.showNotification
@@ -2448,9 +2167,6 @@ class StationManager {
                   "success",
                 );
               }
-
-              // *** IMMEDIATE episode info update after successful playback ***
-              setTimeout(() => this.triggerImmediateEpisodeUpdate(), 100);
             })
             .catch((error) => {
               console.log("🎵 Could not auto-resume playback:", error);
@@ -2463,106 +2179,118 @@ class StationManager {
                   "info",
                 );
               }
-              // Still update episode info even if playback failed
-              setTimeout(() => this.triggerImmediateEpisodeUpdate(), 100);
             });
+        } else {
+          if (
+            this.globalRadioPlayer &&
+            this.globalRadioPlayer.showNotification
+          ) {
+            this.globalRadioPlayer.showNotification(
+              `Tuned to: ${this.getStationName(this.currentStationId)}`,
+              "success",
+            );
+          }
         }
-      } else {
-        // Even if not playing, update episode info immediately
-        setTimeout(() => this.triggerImmediateEpisodeUpdate(), 100);
-      }
-    };
+      };
 
-    const onError = () => {
-      if (!switchingStream) return;
+      const onError = (error) => {
+        console.error("🎵 Error loading new station stream:", error);
+        audioPlayer.removeEventListener("loadedmetadata", onLoadedMetadata);
+        audioPlayer.removeEventListener("error", onError);
+        clearTimeout(timeoutId);
 
-      console.log("🎵 Error loading new station stream, trying fallback");
-      audioPlayer.removeEventListener("canplay", onCanPlay);
-      audioPlayer.removeEventListener("error", onError);
-      clearTimeout(timeoutId);
+        if (this.globalRadioPlayer && this.globalRadioPlayer.showNotification) {
+          this.globalRadioPlayer.showNotification(
+            "Failed to switch station. Please try again.",
+            "error",
+          );
+        }
+      };
 
-      // Re-enable normal error handling
-      switchingStream = false;
-      audioPlayer.onerror = originalErrorHandler;
+      // Set up timeout
+      const timeoutId = setTimeout(() => {
+        console.log("🎵 Station switch timeout");
+        audioPlayer.removeEventListener("loadedmetadata", onLoadedMetadata);
+        audioPlayer.removeEventListener("error", onError);
 
-      // Try fallback approach immediately
-      this.fallbackToSimpleStreamSwitch(streamUrl, wasPlaying);
-    };
+        if (this.globalRadioPlayer && this.globalRadioPlayer.showNotification) {
+          this.globalRadioPlayer.showNotification(
+            "Station switch taking longer than expected...",
+            "info",
+          );
+        }
+      }, 10000); // Increased timeout for metadata loading
 
-    // Add event listeners
-    audioPlayer.addEventListener("canplay", onCanPlay);
-    audioPlayer.addEventListener("error", onError);
+      // Add event listeners
+      audioPlayer.addEventListener("loadedmetadata", onLoadedMetadata, {
+        once: true,
+      });
+      audioPlayer.addEventListener("error", onError, { once: true });
 
-    // Timeout for fallback (reduced to 2 seconds for faster response)
-    const timeoutId = setTimeout(() => {
-      console.log("🎵 Station switch timeout (2s), trying fallback");
-      audioPlayer.removeEventListener("canplay", onCanPlay);
-      audioPlayer.removeEventListener("error", onError);
-      switchingStream = false;
-      audioPlayer.onerror = originalErrorHandler;
-
-      this.fallbackToSimpleStreamSwitch(streamUrl, wasPlaying);
-    }, 2000); // Reduced from 3000 to 2000
-
-    // Set the new source
-    try {
+      // Switch to new stream
       audioPlayer.src = streamUrl;
       audioPlayer.load();
     } catch (error) {
-      console.log("🎵 Error setting new source:", error);
-      clearTimeout(timeoutId);
-      onError();
+      console.error("🎵 Exception during station switch:", error);
+      if (this.globalRadioPlayer && this.globalRadioPlayer.showNotification) {
+        this.globalRadioPlayer.showNotification(
+          "Station switch failed: " + error.message,
+          "error",
+        );
+      }
     }
   }
 
-  fallbackToSimpleStreamSwitch(streamUrl, wasPlaying) {
-    console.log("🎵 Using simple stream switch fallback");
+  async updateEpisodeInfoForStation(stationId) {
+    console.log("🎵 Updating episode info for station:", stationId);
 
-    const audioPlayer = this.getAudioPlayer();
-    if (!audioPlayer) {
-      this.fallbackToPageReload();
-      return;
-    }
+    try {
+      const response = await fetch(
+        `/now-playing?station=${stationId}&t=${Date.now()}`,
+      );
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
 
-    // Simple approach: just set source and play if needed
-    audioPlayer.src = streamUrl;
+      const data = await response.json();
+      console.log("🎵 Episode data for station", stationId, ":", {
+        id: data.id,
+        title: data.title?.substring(0, 50) + "...",
+        show: data.show_name,
+      });
 
-    // *** IMMEDIATE episode info update in fallback too ***
-    setTimeout(() => this.triggerImmediateEpisodeUpdate(), 100);
+      // Direct DOM updates - this is what was missing
+      const elements = [
+        { id: "player-episode-title", value: data.title },
+        { id: "player-show-name", value: data.show_name },
+        { id: "episode-title", value: data.title },
+        { id: "show-name", value: data.show_name },
+        { id: "random-fact", value: data.random_fact },
+      ];
 
-    if (wasPlaying) {
-      setTimeout(() => {
-        const playPromise = audioPlayer.play();
-        if (playPromise) {
-          playPromise
-            .then(() => {
-              console.log("🎵 Fallback playback successful");
-              if (
-                this.globalRadioPlayer &&
-                this.globalRadioPlayer.showNotification
-              ) {
-                this.globalRadioPlayer.showNotification(
-                  "Station switched successfully!",
-                  "success",
-                );
-              }
-              // Another episode update after successful playback
-              setTimeout(() => this.triggerImmediateEpisodeUpdate(), 200);
-            })
-            .catch((error) => {
-              console.log("🎵 Fallback playback failed:", error);
-              if (
-                this.globalRadioPlayer &&
-                this.globalRadioPlayer.showNotification
-              ) {
-                this.globalRadioPlayer.showNotification(
-                  "Station switched! Click play to resume.",
-                  "info",
-                );
-              }
-            });
+      elements.forEach(({ id, value }) => {
+        const el = document.getElementById(id);
+        if (el && value) {
+          el.textContent = value;
         }
-      }, 500);
+      });
+
+      // Update images
+      const playerCover = document.getElementById("player-episode-cover");
+      const homeCover = document.getElementById("episode-cover-art");
+      if (playerCover && data.image_path) {
+        playerCover.src = data.image_path;
+      }
+      if (homeCover && data.image_path) {
+        homeCover.src = data.image_path;
+      }
+
+      // Update global player state
+      if (this.globalRadioPlayer) {
+        this.globalRadioPlayer.currentEpisodeId = data.id;
+      }
+    } catch (error) {
+      console.error("🎵 Failed to update episode info:", error);
     }
   }
 
@@ -2579,17 +2307,7 @@ class StationManager {
       return persistentAudio;
     }
 
-    // Method 3: Look for any audio element in the global player bar
-    const playerBar = document.getElementById("global-player-bar");
-    if (playerBar) {
-      const audioInBar = playerBar.querySelector("audio");
-      if (audioInBar) {
-        console.log("🎵 Found audio player in player bar");
-        return audioInBar;
-      }
-    }
-
-    // Method 4: Look for any audio element in the document
+    // Method 3: Look for any audio element in the document
     const anyAudio = document.querySelector("audio");
     if (anyAudio) {
       console.log("🎵 Found audio player in document");
@@ -2598,22 +2316,6 @@ class StationManager {
 
     console.error("🎵 No audio player found anywhere!");
     return null;
-  }
-
-  fallbackToPageReload() {
-    console.log("🎵 Using fallback page reload method");
-
-    if (this.globalRadioPlayer && this.globalRadioPlayer.showNotification) {
-      this.globalRadioPlayer.showNotification(
-        "Station switched! The page will refresh to complete the change.",
-        "info",
-      );
-    }
-
-    // Give a moment for the notification to show, then reload
-    setTimeout(() => {
-      window.location.reload();
-    }, 2000);
   }
 
   getStationName(stationId) {
@@ -2630,11 +2332,11 @@ class StationManager {
   }
 
   startStationSync() {
-    // Check for station updates every 30 seconds
+    // Periodically refresh station list (but don't change current station)
     setInterval(async () => {
       await this.loadStations();
       this.updateCurrentStationDisplay();
-    }, 30000);
+    }, 60000); // Every minute
   }
 }
 
@@ -2681,7 +2383,6 @@ class ThemeManager {
     this.createThemeSelector();
     this.applyTheme(this.currentTheme);
     this.setupEventListeners();
-    this.setupMobileNavigation();
     this.setupKonamiCode();
     this.updateDisplay();
   }
@@ -2725,23 +2426,12 @@ class ThemeManager {
     if (themeDisplay) themeDisplay.textContent = themeName;
     if (currentThemeSpan) currentThemeSpan.textContent = themeName;
 
-    // Update desktop theme options
     document.querySelectorAll(".theme-option").forEach((option) => {
       option.classList.toggle(
         "active",
         option.dataset.theme === this.currentTheme,
       );
     });
-
-    // Update mobile theme options (only if they exist)
-    if (window.innerWidth <= 768) {
-      document.querySelectorAll(".mobile-theme-option").forEach((option) => {
-        option.classList.toggle(
-          "active",
-          option.dataset.theme === this.currentTheme,
-        );
-      });
-    }
   }
 
   getThemeName(theme) {
@@ -2762,8 +2452,7 @@ class ThemeManager {
     const nav = document.querySelector("nav");
     if (!nav) return;
 
-    // Create desktop theme selector
-    const desktopThemeSelectorHTML = `
+    const themeSelectorHTML = `
       <div class="theme-selector">
           <button class="theme-button" id="theme-toggle">
               <i class="fas fa-palette"></i>
@@ -2814,158 +2503,7 @@ class ThemeManager {
       </div>
     `;
 
-    // Create mobile theme selector for header
-    const mobileHeaderThemeHTML = `
-      <div class="theme-selector">
-          <button class="theme-button" id="mobile-theme-toggle">
-              <i class="fas fa-palette"></i>
-          </button>
-      </div>
-    `;
-
-    // Insert desktop version into nav ul area
-    nav
-      .querySelector("ul")
-      .insertAdjacentHTML("afterend", desktopThemeSelectorHTML);
-
-    // Insert mobile version into mobile header actions
-    const mobileActions = nav.querySelector(".mobile-header-actions");
-    if (mobileActions) {
-      mobileActions.insertAdjacentHTML("afterbegin", mobileHeaderThemeHTML);
-    }
-
-    this.createMobileThemeGrid();
-  }
-
-  createMobileThemeGrid() {
-    const mobileThemeGrid = document.getElementById("mobile-theme-grid");
-    if (!mobileThemeGrid) return;
-
-    const themes = [
-      {
-        id: "light",
-        name: "Light",
-        colors: ["#5e60ce", "#64dfdf", "#ff7c7c"],
-      },
-      {
-        id: "dark",
-        name: "Dark",
-        colors: ["#7c3aed", "#06b6d4", "#f59e0b"],
-      },
-      {
-        id: "synthwave",
-        name: "Synthwave",
-        colors: ["#ff0080", "#00ffff", "#ffff00"],
-      },
-      {
-        id: "forest",
-        name: "Forest",
-        colors: ["#16a085", "#27ae60", "#f39c12"],
-      },
-      {
-        id: "ocean",
-        name: "Ocean",
-        colors: ["#3498db", "#2980b9", "#1abc9c"],
-      },
-    ];
-
-    themes.forEach((theme) => {
-      const themeOption = document.createElement("div");
-      themeOption.className = "mobile-theme-option";
-      themeOption.dataset.theme = theme.id;
-
-      themeOption.innerHTML = `
-        <div class="theme-preview">
-          ${theme.colors
-            .map(
-              (color) =>
-                `<div class="theme-preview-color" style="background: ${color};"></div>`,
-            )
-            .join("")}
-        </div>
-        <div class="mobile-theme-name">${theme.name}</div>
-      `;
-
-      themeOption.addEventListener("click", () => {
-        this.applyTheme(theme.id);
-        this.closeMobileMenu();
-      });
-
-      mobileThemeGrid.appendChild(themeOption);
-    });
-  }
-
-  setupMobileNavigation() {
-    const mobileMenuToggle = document.getElementById("mobile-menu-toggle");
-    const mobileNavOverlay = document.getElementById("mobile-nav-overlay");
-    const mobileNavClose = document.getElementById("mobile-nav-close");
-    const mobileThemeToggle = document.getElementById("mobile-theme-toggle");
-
-    if (mobileMenuToggle) {
-      mobileMenuToggle.addEventListener("click", () => {
-        this.openMobileMenu();
-      });
-    }
-
-    if (mobileNavClose) {
-      mobileNavClose.addEventListener("click", () => {
-        this.closeMobileMenu();
-      });
-    }
-
-    if (mobileNavOverlay) {
-      mobileNavOverlay.addEventListener("click", (e) => {
-        if (e.target === mobileNavOverlay) {
-          this.closeMobileMenu();
-        }
-      });
-    }
-
-    if (mobileThemeToggle) {
-      mobileThemeToggle.addEventListener("click", () => {
-        this.openMobileMenu();
-      });
-    }
-
-    // Handle escape key for mobile menu
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") {
-        this.closeMobileMenu();
-      }
-    });
-
-    // Update mobile nav active states based on current page
-    this.updateMobileNavActiveStates();
-  }
-
-  openMobileMenu() {
-    const mobileNavOverlay = document.getElementById("mobile-nav-overlay");
-    if (mobileNavOverlay) {
-      mobileNavOverlay.classList.add("active");
-      document.body.style.overflow = "hidden"; // Prevent background scrolling
-    }
-  }
-
-  closeMobileMenu() {
-    const mobileNavOverlay = document.getElementById("mobile-nav-overlay");
-    if (mobileNavOverlay) {
-      mobileNavOverlay.classList.remove("active");
-      document.body.style.overflow = ""; // Restore scrolling
-    }
-  }
-
-  updateMobileNavActiveStates() {
-    const currentPath = window.location.pathname;
-    const mobileNavLinks = document.querySelectorAll(".mobile-nav-link");
-
-    mobileNavLinks.forEach((link) => {
-      const href = new URL(link.href).pathname;
-      if (href === currentPath) {
-        link.classList.add("active");
-      } else {
-        link.classList.remove("active");
-      }
-    });
+    nav.insertAdjacentHTML("beforeend", themeSelectorHTML);
   }
 
   setupEventListeners() {
@@ -3146,35 +2684,6 @@ class ThemeManager {
       });
 
       themeDropdown.appendChild(hotdogOption);
-    }
-
-    // Only add to mobile theme grid if on mobile and it exists
-    if (window.innerWidth <= 768) {
-      const mobileThemeGrid = document.getElementById("mobile-theme-grid");
-      if (
-        mobileThemeGrid &&
-        !mobileThemeGrid.querySelector('[data-theme="hotdog"]')
-      ) {
-        const mobileHotdogOption = document.createElement("div");
-        mobileHotdogOption.className = "mobile-theme-option";
-        mobileHotdogOption.dataset.theme = "hotdog";
-
-        mobileHotdogOption.innerHTML = `
-          <div class="theme-preview">
-            <div class="theme-preview-color" style="background: #ff0000;"></div>
-            <div class="theme-preview-color" style="background: #ffff00;"></div>
-            <div class="theme-preview-color" style="background: #ff8000;"></div>
-          </div>
-          <div class="mobile-theme-name">🌭 Hot Dog</div>
-        `;
-
-        mobileHotdogOption.addEventListener("click", () => {
-          this.applyTheme("hotdog");
-          this.closeMobileMenu();
-        });
-
-        mobileThemeGrid.appendChild(mobileHotdogOption);
-      }
     }
   }
 
