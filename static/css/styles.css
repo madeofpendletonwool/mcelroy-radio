@@ -2568,6 +2568,20 @@ header,
     }
 }
 
+.btn-play {
+    background-color: var(--accent-color) !important;
+    color: white;
+}
+
+.btn-play:hover {
+    background-color: var(--secondary-color) !important;
+    transform: translateY(-2px);
+}
+
+.btn-play:active {
+    transform: translateY(0);
+}
+
 /* High contrast mode support */
 @media (prefers-contrast: high) {
     .loading-overlay {

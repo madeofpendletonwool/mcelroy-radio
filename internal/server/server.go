@@ -43,6 +43,9 @@ func New(cfg *config.Config) (*http.Server, error) {
 	// Core streaming route - now supports ?station= parameter
 	r.Get("/stream", h.StreamAudio)
 
+	// NEW: Episode streaming route
+	r.Get("/stream-episode", h.StreamEpisode)
+
 	// API routes - all now support ?station= parameter
 	r.Get("/now-playing", h.NowPlaying)
 	r.Get("/recent", h.RecentlyPlayed)
@@ -51,7 +54,6 @@ func New(cfg *config.Config) (*http.Server, error) {
 	// Station routes
 	r.Get("/stations", h.StationList)
 	r.Get("/station-info", h.StationInfo)
-	// REMOVED: r.Post("/switch-station", h.SwitchStation) - no more server-side switching!
 
 	// Utility routes
 	r.Get("/random-fact", h.RandomFact)

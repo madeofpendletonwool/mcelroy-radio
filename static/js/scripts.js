@@ -421,6 +421,11 @@ class GlobalRadioPlayer {
 
     // Directory page functionality
     this.setupDirectoryFunctionality();
+
+    // NEW: Bind episode play buttons
+    if (document.querySelectorAll(".btn-play").length > 0) {
+      bindDirectoryPlayButtons();
+    }
   }
 
   setupDirectoryFunctionality() {
@@ -3080,3 +3085,262 @@ document.addEventListener("DOMContentLoaded", function () {
     setInterval(updateQuoteBox, 15000);
   }
 });
+
+// Episode Player Manager - handles individual episode playback
+class EpisodePlayer {
+  constructor(globalRadioPlayer) {
+    this.globalRadioPlayer = globalRadioPlayer;
+    this.currentEpisodeId = null;
+    this.isPlayingEpisode = false;
+
+    console.log("🎵 Episode Player initialized");
+  }
+
+  async playEpisode(episodeId, episodeTitle, showName, imagePath, duration) {
+    console.log("🎵 Playing specific episode:", episodeTitle);
+
+    if (!this.globalRadioPlayer || !this.globalRadioPlayer.audioPlayer) {
+      console.error("🎵 No global audio player available");
+      return;
+    }
+
+    const audioPlayer = this.globalRadioPlayer.audioPlayer;
+    const wasPlaying = !audioPlayer.paused;
+
+    try {
+      // Stop current playback
+      if (!audioPlayer.paused) {
+        audioPlayer.pause();
+      }
+
+      // Show loading state
+      if (this.globalRadioPlayer.showLoadingOverlay) {
+        this.globalRadioPlayer.showLoadingOverlay();
+        this.globalRadioPlayer.updateLoadingStatus("Loading episode...");
+      }
+
+      // Construct episode stream URL
+      const streamUrl = `/stream-episode?id=${encodeURIComponent(episodeId)}&t=${Date.now()}`;
+      console.log("🎵 Episode stream URL:", streamUrl);
+
+      // Set up event handlers for the episode
+      const onLoadedMetadata = () => {
+        console.log("🎵 Episode metadata loaded");
+        audioPlayer.removeEventListener("loadedmetadata", onLoadedMetadata);
+        audioPlayer.removeEventListener("error", onError);
+        clearTimeout(timeoutId);
+
+        // Update UI immediately with episode info
+        this.updateUIWithEpisodeInfo(
+          episodeId,
+          episodeTitle,
+          showName,
+          imagePath,
+          duration,
+        );
+
+        // Hide loading overlay
+        if (this.globalRadioPlayer.setStreamReady) {
+          this.globalRadioPlayer.setStreamReady(true);
+        }
+
+        // Try to start playback
+        audioPlayer
+          .play()
+          .then(() => {
+            console.log("🎵 Episode playback started successfully");
+            this.isPlayingEpisode = true;
+            this.currentEpisodeId = episodeId;
+
+            if (this.globalRadioPlayer.showNotification) {
+              this.globalRadioPlayer.showNotification(
+                `Now playing: ${episodeTitle}`,
+                "success",
+              );
+            }
+          })
+          .catch((error) => {
+            console.log("🎵 Episode autoplay prevented:", error);
+            this.isPlayingEpisode = false;
+
+            if (this.globalRadioPlayer.showNotification) {
+              this.globalRadioPlayer.showNotification(
+                "Episode loaded! Click play to start listening.",
+                "info",
+              );
+            }
+          });
+      };
+
+      const onError = (error) => {
+        console.error("🎵 Error loading episode:", error);
+        audioPlayer.removeEventListener("loadedmetadata", onLoadedMetadata);
+        audioPlayer.removeEventListener("error", onError);
+        clearTimeout(timeoutId);
+
+        if (this.globalRadioPlayer.hideLoadingOverlay) {
+          this.globalRadioPlayer.hideLoadingOverlay();
+        }
+
+        if (this.globalRadioPlayer.showNotification) {
+          this.globalRadioPlayer.showNotification(
+            "Failed to load episode. Please try again.",
+            "error",
+          );
+        }
+      };
+
+      // Set timeout for loading
+      const timeoutId = setTimeout(() => {
+        console.log("🎵 Episode loading timeout");
+        audioPlayer.removeEventListener("loadedmetadata", onLoadedMetadata);
+        audioPlayer.removeEventListener("error", onError);
+
+        if (this.globalRadioPlayer.showNotification) {
+          this.globalRadioPlayer.showNotification(
+            "Episode loading is taking longer than expected...",
+            "info",
+          );
+        }
+      }, 10000);
+
+      // Add event listeners
+      audioPlayer.addEventListener("loadedmetadata", onLoadedMetadata, {
+        once: true,
+      });
+      audioPlayer.addEventListener("error", onError, { once: true });
+
+      // Set the episode stream URL
+      audioPlayer.src = streamUrl;
+      audioPlayer.load();
+
+      // Mark that we're now in episode mode (not station mode)
+      this.globalRadioPlayer.currentStationId = null;
+      this.currentEpisodeId = episodeId;
+    } catch (error) {
+      console.error("🎵 Exception during episode playback:", error);
+      if (this.globalRadioPlayer.showNotification) {
+        this.globalRadioPlayer.showNotification(
+          "Failed to play episode: " + error.message,
+          "error",
+        );
+      }
+    }
+  }
+
+  updateUIWithEpisodeInfo(
+    episodeId,
+    episodeTitle,
+    showName,
+    imagePath,
+    duration,
+  ) {
+    console.log("🎵 Updating UI with episode info:", episodeTitle);
+
+    // Update global player bar
+    const playerTitle = document.getElementById("player-episode-title");
+    const playerShowName = document.getElementById("player-show-name");
+    const playerCover = document.getElementById("player-episode-cover");
+    const playerDuration = document.getElementById("player-duration");
+
+    if (playerTitle) playerTitle.textContent = episodeTitle;
+    if (playerShowName) playerShowName.textContent = showName;
+    if (playerCover && imagePath) {
+      playerCover.src = imagePath;
+      playerCover.alt = `${showName} Cover Art`;
+    }
+    if (playerDuration && duration) {
+      playerDuration.textContent = this.formatTime(duration);
+    }
+
+    // Update homepage elements if they exist
+    const homeTitle = document.getElementById("episode-title");
+    const homeShowName = document.getElementById("show-name");
+    const homeCover = document.getElementById("episode-cover-art");
+
+    if (homeTitle) homeTitle.textContent = episodeTitle;
+    if (homeShowName) homeShowName.textContent = showName;
+    if (homeCover && imagePath) {
+      homeCover.src = imagePath;
+      homeCover.alt = `${showName} Cover Art`;
+    }
+
+    // Update page title
+    document.title = `${episodeTitle} - ${showName} | McElroy Radio`;
+
+    // Update media session if available
+    if (this.globalRadioPlayer.updateMediaSessionMetadata) {
+      this.globalRadioPlayer.updateMediaSessionMetadata({
+        title: episodeTitle,
+        show_name: showName,
+        image_path: imagePath,
+      });
+    }
+  }
+
+  formatTime(seconds) {
+    if (isNaN(seconds) || !isFinite(seconds) || seconds < 0) {
+      return "00:00";
+    }
+
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
+    } else {
+      return `${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
+    }
+  }
+
+  isCurrentlyPlayingEpisode(episodeId) {
+    return this.isPlayingEpisode && this.currentEpisodeId === episodeId;
+  }
+
+  stopEpisodeMode() {
+    console.log("🎵 Stopping episode mode");
+    this.isPlayingEpisode = false;
+    this.currentEpisodeId = null;
+  }
+}
+
+// Add this to the GlobalRadioPlayer.bindPageSpecificElements method:
+function bindDirectoryPlayButtons() {
+  // Remove existing episode player if it exists
+  if (window.globalRadioPlayer && !window.globalRadioPlayer.episodePlayer) {
+    window.globalRadioPlayer.episodePlayer = new EpisodePlayer(
+      window.globalRadioPlayer,
+    );
+  }
+
+  // Bind play buttons in directory
+  document.querySelectorAll(".btn-play").forEach((button) => {
+    button.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const episodeId = button.dataset.episodeId;
+      const episodeTitle = button.dataset.episodeTitle;
+      const showName = button.dataset.showName;
+      const imagePath = button.dataset.episodeImage;
+      const duration = parseFloat(button.dataset.episodeDuration);
+
+      if (window.globalRadioPlayer && window.globalRadioPlayer.episodePlayer) {
+        window.globalRadioPlayer.episodePlayer.playEpisode(
+          episodeId,
+          episodeTitle,
+          showName,
+          imagePath,
+          duration,
+        );
+      }
+    });
+  });
+
+  console.log(
+    "🎵 Bound",
+    document.querySelectorAll(".btn-play").length,
+    "episode play buttons",
+  );
+}
