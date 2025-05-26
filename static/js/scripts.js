@@ -1297,10 +1297,24 @@ class GlobalRadioPlayer {
 
   // Update checkForNewEpisode to include station parameter
   checkForNewEpisode(forceUpdate = false) {
+    // CRITICAL: If we're in episode mode, don't check for station episodes
+    if (this.episodePlayer && this.episodePlayer.isPlayingEpisode) {
+      console.log("🎵 In episode mode, skipping station episode check");
+      return;
+    }
+
+    // If no current station ID, we're in episode mode
+    if (!this.currentStationId) {
+      console.log(
+        "🎵 No station ID set, likely in episode mode, skipping check",
+      );
+      return;
+    }
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
 
-    // FIX 1: Properly construct URL with station parameter
+    // Properly construct URL with station parameter
     const params = new URLSearchParams();
     params.append("station", this.currentStationId);
 
@@ -1354,12 +1368,12 @@ class GlobalRadioPlayer {
           },
         );
 
-        // FIX 2: Validate that the response is for the correct station
+        // Validate that the response is for the correct station
         if (data.station_id && data.station_id !== this.currentStationId) {
           console.warn(
             `🎵 Station mismatch! Expected ${this.currentStationId}, got ${data.station_id}. Ignoring response.`,
           );
-          return; // Don't update UI with wrong station data
+          return;
         }
 
         const shouldUpdate =
@@ -1376,7 +1390,7 @@ class GlobalRadioPlayer {
           this.updateUIWithEpisodeData(data);
           this.updateMediaSessionMetadata(data);
 
-          // FIX 3: Only update audio source if needed and validate station matches
+          // Only update audio source if needed and validate station matches
           if (!forceUpdate) {
             const expectedStreamUrl = `/stream?station=${this.currentStationId}`;
             const currentAudioSrc = this.audioPlayer.src;
@@ -1409,6 +1423,18 @@ class GlobalRadioPlayer {
           console.error("🎵 Error checking for new episode:", err);
         }
       });
+  }
+
+  async returnToStationMode(stationId = "all") {
+    console.log("🎵 Returning to station mode:", stationId);
+
+    // Stop episode mode if active
+    if (this.globalRadioPlayer && this.globalRadioPlayer.episodePlayer) {
+      this.globalRadioPlayer.episodePlayer.stopEpisodeMode();
+    }
+
+    // Switch back to station
+    await this.switchToStation(stationId);
   }
 
   // Add this method to your GlobalRadioPlayer class if it's missing:
@@ -2127,15 +2153,23 @@ class StationManager {
     // Use the correct global player reference
     const realGlobalPlayer = window.globalRadioPlayer;
     if (realGlobalPlayer) {
+      // CRITICAL: Stop episode mode when switching to station
+      if (realGlobalPlayer.episodePlayer) {
+        realGlobalPlayer.episodePlayer.stopEpisodeMode();
+        console.log("🎵 Stopped episode mode for station switch");
+      }
+
       realGlobalPlayer.currentStationId = stationId;
       console.log("🎵 Updated GlobalRadioPlayer station to:", stationId);
 
-      // Restart episode checking with new station
+      // CRITICAL: Always restart episode checking when switching to station
       if (realGlobalPlayer.episodeCheckInterval) {
         clearInterval(realGlobalPlayer.episodeCheckInterval);
         realGlobalPlayer.episodeCheckInterval = null;
       }
+      // Start episode checking for the new station
       realGlobalPlayer.startEpisodeChecking();
+      console.log("🎵 Restarted episode checking for station:", stationId);
 
       // Show notification
       if (realGlobalPlayer.showNotification) {
@@ -3092,6 +3126,7 @@ class EpisodePlayer {
     this.globalRadioPlayer = globalRadioPlayer;
     this.currentEpisodeId = null;
     this.isPlayingEpisode = false;
+    this.currentEpisodeData = null; // Store the episode data
 
     console.log("🎵 Episode Player initialized");
   }
@@ -3103,6 +3138,9 @@ class EpisodePlayer {
       console.error("🎵 No global audio player available");
       return;
     }
+
+    // CRITICAL: Stop station episode checking when switching to episode mode
+    this.stopStationMode();
 
     const audioPlayer = this.globalRadioPlayer.audioPlayer;
     const wasPlaying = !audioPlayer.paused;
@@ -3118,6 +3156,18 @@ class EpisodePlayer {
         this.globalRadioPlayer.showLoadingOverlay();
         this.globalRadioPlayer.updateLoadingStatus("Loading episode...");
       }
+
+      // Store episode data for later reference
+      this.currentEpisodeData = {
+        id: episodeId,
+        title: episodeTitle,
+        show_name: showName,
+        image_path: imagePath,
+        duration: duration,
+        is_playing: true,
+        current_position: 0,
+        time_position: 0,
+      };
 
       // Construct episode stream URL
       const streamUrl = `/stream-episode?id=${encodeURIComponent(episodeId)}&t=${Date.now()}`;
@@ -3151,6 +3201,9 @@ class EpisodePlayer {
             console.log("🎵 Episode playback started successfully");
             this.isPlayingEpisode = true;
             this.currentEpisodeId = episodeId;
+
+            // Start episode progress tracking
+            this.startEpisodeProgressTracking();
 
             if (this.globalRadioPlayer.showNotification) {
               this.globalRadioPlayer.showNotification(
@@ -3228,6 +3281,40 @@ class EpisodePlayer {
     }
   }
 
+  stopStationMode() {
+    console.log("🎵 Stopping station mode to enter episode mode");
+
+    // Clear station checking interval
+    if (this.globalRadioPlayer.episodeCheckInterval) {
+      clearInterval(this.globalRadioPlayer.episodeCheckInterval);
+      this.globalRadioPlayer.episodeCheckInterval = null;
+      console.log("🎵 Stopped station episode checking");
+    }
+
+    // Clear station ID
+    this.globalRadioPlayer.currentStationId = null;
+  }
+
+  startEpisodeProgressTracking() {
+    // Clear any existing tracking
+    if (this.episodeProgressInterval) {
+      clearInterval(this.episodeProgressInterval);
+    }
+
+    // Track episode progress
+    this.episodeProgressInterval = setInterval(() => {
+      if (this.globalRadioPlayer.audioPlayer && this.currentEpisodeData) {
+        const currentTime = this.globalRadioPlayer.audioPlayer.currentTime;
+        this.currentEpisodeData.time_position = currentTime;
+        this.currentEpisodeData.current_position = Math.floor(
+          currentTime * 16000,
+        ); // Rough byte estimate
+        this.currentEpisodeData.is_playing =
+          !this.globalRadioPlayer.audioPlayer.paused;
+      }
+    }, 1000);
+  }
+
   updateUIWithEpisodeInfo(
     episodeId,
     episodeTitle,
@@ -3298,10 +3385,20 @@ class EpisodePlayer {
     return this.isPlayingEpisode && this.currentEpisodeId === episodeId;
   }
 
+  getCurrentEpisodeData() {
+    return this.currentEpisodeData;
+  }
+
   stopEpisodeMode() {
     console.log("🎵 Stopping episode mode");
     this.isPlayingEpisode = false;
     this.currentEpisodeId = null;
+    this.currentEpisodeData = null;
+
+    if (this.episodeProgressInterval) {
+      clearInterval(this.episodeProgressInterval);
+      this.episodeProgressInterval = null;
+    }
   }
 }
 
