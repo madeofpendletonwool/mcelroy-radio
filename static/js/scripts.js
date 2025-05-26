@@ -13,6 +13,10 @@ class GlobalRadioPlayer {
     this.episodeCheckInterval = null;
     this.isInitialized = false;
 
+    const savedStation = this.getSavedStation() || "all";
+    this.currentStationId = savedStation;
+    console.log("🎵 Initialized with station:", this.currentStationId);
+
     // DOM elements
     this.audioPlayer = null;
     this.playerBar = null;
@@ -53,6 +57,20 @@ class GlobalRadioPlayer {
 
   saveStation(stationId) {
     localStorage.setItem("mcElroyRadioStation", stationId);
+  }
+
+  restartEpisodeChecking() {
+    console.log(
+      "🎵 Restarting episode checking for station:",
+      this.currentStationId,
+    );
+
+    if (this.episodeCheckInterval) {
+      clearInterval(this.episodeCheckInterval);
+      this.episodeCheckInterval = null;
+    }
+
+    this.startEpisodeChecking();
   }
 
   init() {
@@ -839,7 +857,6 @@ class GlobalRadioPlayer {
     });
   }
 
-  // Update initializeAudio to use current station
   initializeAudio() {
     if (!this.audioPlayer) return;
 
@@ -865,14 +882,24 @@ class GlobalRadioPlayer {
 
     this.updateLoadingStatus(this.LoadingStates.FETCHING_POSITION);
 
+    // FIX 5: Properly construct stream position URL
+    const positionParams = new URLSearchParams();
+    positionParams.append("station", this.currentStationId);
+    positionParams.append("t", Date.now().toString());
+    const positionUrl = `/stream-position?${positionParams.toString()}`;
+
     // Get server position for current station
-    fetch(`/stream-position?station=${this.currentStationId}&t=${Date.now()}`)
+    fetch(positionUrl)
       .then((response) => response.json())
       .then((data) => {
         const serverTimePosition = data.time_position || 0;
         this.updateLoadingStatus(this.LoadingStates.LOADING_STREAM);
 
-        const streamUrl = `/stream?station=${this.currentStationId}&t=${Date.now()}`;
+        // FIX 6: Ensure audio stream URL includes correct station
+        const streamParams = new URLSearchParams();
+        streamParams.append("station", this.currentStationId);
+        streamParams.append("t", Date.now().toString());
+        const streamUrl = `/stream?${streamParams.toString()}`;
 
         console.log(
           "Setting audio source for station",
@@ -1268,12 +1295,19 @@ class GlobalRadioPlayer {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
 
-    const cacheBuster = forceUpdate
-      ? `?force=${Date.now()}&cb=${Math.random()}`
-      : `?t=${Date.now()}`;
+    // FIX 1: Properly construct URL with station parameter
+    const params = new URLSearchParams();
+    params.append("station", this.currentStationId);
 
-    // Include current station in the request
-    const url = `/now-playing${cacheBuster}&station=${this.currentStationId}`;
+    if (forceUpdate) {
+      params.append("force", Date.now().toString());
+      params.append("cb", Math.random().toString());
+    } else {
+      params.append("t", Date.now().toString());
+    }
+
+    // Construct the URL properly
+    const url = `/now-playing?${params.toString()}`;
 
     console.log(
       `🎵 Checking for new episode on station ${this.currentStationId}${forceUpdate ? " (FORCED)" : ""}: ${url}`,
@@ -1310,8 +1344,18 @@ class GlobalRadioPlayer {
             isNewEpisode: data.id !== this.currentEpisodeId,
             forceUpdate: forceUpdate,
             stationId: data.station_id,
+            serverStationId: data.station_id,
+            clientStationId: this.currentStationId,
           },
         );
+
+        // FIX 2: Validate that the response is for the correct station
+        if (data.station_id && data.station_id !== this.currentStationId) {
+          console.warn(
+            `🎵 Station mismatch! Expected ${this.currentStationId}, got ${data.station_id}. Ignoring response.`,
+          );
+          return; // Don't update UI with wrong station data
+        }
 
         const shouldUpdate =
           forceUpdate || (data.id && data.id !== this.currentEpisodeId);
@@ -1327,19 +1371,22 @@ class GlobalRadioPlayer {
           this.updateUIWithEpisodeData(data);
           this.updateMediaSessionMetadata(data);
 
-          // Only update audio source if needed and not during a forced update
-          if (
-            !forceUpdate &&
-            !this.audioPlayer.src.includes(
-              `/stream?station=${this.currentStationId}`,
-            )
-          ) {
-            const streamUrl = `/stream?station=${this.currentStationId}&t=${Date.now()}`;
-            this.audioPlayer.src = streamUrl;
-            this.audioPlayer.currentTime = 0;
+          // FIX 3: Only update audio source if needed and validate station matches
+          if (!forceUpdate) {
+            const expectedStreamUrl = `/stream?station=${this.currentStationId}`;
+            const currentAudioSrc = this.audioPlayer.src;
 
-            if (this.isPlaying) {
-              this.audioPlayer.play().catch(console.error);
+            if (!currentAudioSrc.includes(expectedStreamUrl)) {
+              const streamUrl = `${expectedStreamUrl}&t=${Date.now()}`;
+              console.log(
+                `🎵 Updating audio source to match station: ${streamUrl}`,
+              );
+              this.audioPlayer.src = streamUrl;
+              this.audioPlayer.currentTime = 0;
+
+              if (this.isPlaying) {
+                this.audioPlayer.play().catch(console.error);
+              }
             }
           }
         }
@@ -1918,7 +1965,19 @@ class StationManager {
   constructor(globalRadioPlayer) {
     this.globalRadioPlayer = globalRadioPlayer;
     this.stations = [];
-    this.currentStationId = this.getSavedStation() || "all"; // Client-side only
+
+    // *** SYNC STATION IDs BETWEEN BOTH CLASSES ***
+    this.currentStationId = this.getSavedStation() || "all";
+
+    // Update the GlobalRadioPlayer to match
+    if (this.globalRadioPlayer) {
+      this.globalRadioPlayer.currentStationId = this.currentStationId;
+      console.log(
+        "🎵 Synced station IDs - both now use:",
+        this.currentStationId,
+      );
+    }
+
     this.stationsGrid = null;
     this.currentStationName = null;
 
@@ -1931,6 +1990,7 @@ class StationManager {
         ? this.globalRadioPlayer.constructor.name
         : "none",
       savedStation: this.currentStationId,
+      globalPlayerStation: this.globalRadioPlayer?.currentStationId,
     });
   }
 
@@ -2059,12 +2119,26 @@ class StationManager {
   async switchToStation(stationId) {
     console.log("🎵 CLIENT-SIDE station switch to:", stationId);
 
-    // Show immediate feedback
-    if (this.globalRadioPlayer && this.globalRadioPlayer.showNotification) {
-      this.globalRadioPlayer.showNotification(
-        `Tuning to ${this.getStationName(stationId)}...`,
-        "info",
-      );
+    // Use the correct global player reference
+    const realGlobalPlayer = window.globalRadioPlayer;
+    if (realGlobalPlayer) {
+      realGlobalPlayer.currentStationId = stationId;
+      console.log("🎵 Updated GlobalRadioPlayer station to:", stationId);
+
+      // Restart episode checking with new station
+      if (realGlobalPlayer.episodeCheckInterval) {
+        clearInterval(realGlobalPlayer.episodeCheckInterval);
+        realGlobalPlayer.episodeCheckInterval = null;
+      }
+      realGlobalPlayer.startEpisodeChecking();
+
+      // Show notification
+      if (realGlobalPlayer.showNotification) {
+        realGlobalPlayer.showNotification(
+          `Tuning to ${this.getStationName(stationId)}...`,
+          "info",
+        );
+      }
     }
 
     // Update client-side state immediately
@@ -2100,11 +2174,14 @@ class StationManager {
     const currentMuted = audioPlayer.muted;
 
     try {
-      // FIRST: Get the station's current time position from server
-      console.log("🎵 Getting station position from server...");
-      const positionResponse = await fetch(
-        `/stream-position?station=${stationId}&t=${Date.now()}`,
-      );
+      // FIX 8: Properly construct position URL with station parameter
+      const positionParams = new URLSearchParams();
+      positionParams.append("station", stationId);
+      positionParams.append("t", Date.now().toString());
+      const positionUrl = `/stream-position?${positionParams.toString()}`;
+
+      console.log("🎵 Getting station position from server:", positionUrl);
+      const positionResponse = await fetch(positionUrl);
       if (!positionResponse.ok) {
         throw new Error(
           `Failed to get station position: ${positionResponse.status}`,
@@ -2122,8 +2199,11 @@ class StationManager {
         audioPlayer.pause();
       }
 
-      // Create new stream URL with station parameter
-      const streamUrl = `/stream?station=${stationId}&t=${Date.now()}`;
+      // FIX 9: Create proper stream URL with station parameter
+      const streamParams = new URLSearchParams();
+      streamParams.append("station", stationId);
+      streamParams.append("t", Date.now().toString());
+      const streamUrl = `/stream?${streamParams.toString()}`;
       console.log("🎵 New station stream URL:", streamUrl);
 
       // Set up event handlers for the new stream
@@ -2219,7 +2299,7 @@ class StationManager {
             "info",
           );
         }
-      }, 10000); // Increased timeout for metadata loading
+      }, 10000);
 
       // Add event listeners
       audioPlayer.addEventListener("loadedmetadata", onLoadedMetadata, {
@@ -2245,9 +2325,13 @@ class StationManager {
     console.log("🎵 Updating episode info for station:", stationId);
 
     try {
-      const response = await fetch(
-        `/now-playing?station=${stationId}&t=${Date.now()}`,
-      );
+      // Properly construct URL with station parameter
+      const params = new URLSearchParams();
+      params.append("station", stationId);
+      params.append("t", Date.now().toString());
+      const url = `/now-playing?${params.toString()}`;
+
+      const response = await fetch(url);
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
@@ -2257,9 +2341,18 @@ class StationManager {
         id: data.id,
         title: data.title?.substring(0, 50) + "...",
         show: data.show_name,
+        stationId: data.station_id,
       });
 
-      // Direct DOM updates - this is what was missing
+      // Validate station matches what we requested
+      if (data.station_id && data.station_id !== stationId) {
+        console.warn(
+          `🎵 Episode info station mismatch! Requested ${stationId}, got ${data.station_id}`,
+        );
+        return; // Don't update with wrong station data
+      }
+
+      // Direct DOM updates
       const elements = [
         { id: "player-episode-title", value: data.title },
         { id: "player-show-name", value: data.show_name },
