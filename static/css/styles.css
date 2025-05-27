@@ -1056,6 +1056,14 @@ nav ul li a:hover {
     background-image: url("/static/images/shows/rose-buddies.jpg");
 }
 
+.show-image.bake-on {
+    background-image: url("/static/images/shows/bake-on.png");
+}
+
+.show-image.the-mcelroys-will-be-in-trolls-world-tour {
+    background-image: url("/static/images/shows/the-mcelroys-will-be-in-trolls-world-tour.png");
+}
+
 .show-card h3 {
     font-size: 1rem;
     padding: 12px 15px 8px;
