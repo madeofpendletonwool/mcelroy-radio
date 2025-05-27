@@ -378,6 +378,44 @@ class GlobalRadioPlayer {
     });
   }
 
+  forceEpisodeInfoUpdate() {
+    console.log(
+      "🎵 Force updating episode information for station:",
+      this.currentStationId,
+    );
+
+    // Clear current episode ID to force recognition as new
+    const previousId = this.currentEpisodeId;
+    this.currentEpisodeId = null;
+
+    // Make immediate forced calls with the correct station
+    this.checkForNewEpisode(true);
+
+    // Multiple rapid attempts to ensure we get the right station's episode
+    setTimeout(() => {
+      console.log("🎵 Force update - second attempt (250ms)");
+      this.checkForNewEpisode(true);
+    }, 250);
+
+    setTimeout(() => {
+      console.log("🎵 Force update - third attempt (750ms)");
+      this.checkForNewEpisode(true);
+    }, 750);
+
+    setTimeout(() => {
+      console.log("🎵 Force update - fourth attempt (1500ms)");
+      this.checkForNewEpisode(true);
+    }, 1500);
+
+    // Restore ID after a moment in case all fetches fail
+    setTimeout(() => {
+      if (this.currentEpisodeId === null) {
+        console.log("🎵 Restoring previous episode ID as fallback");
+        this.currentEpisodeId = previousId;
+      }
+    }, 5000);
+  }
+
   // Add this method to your GlobalRadioPlayer class:
   bindPageSpecificElements() {
     console.log("🔧 Binding page-specific elements...");
@@ -400,21 +438,42 @@ class GlobalRadioPlayer {
 
     // Station Manager initialization for home page
     if (document.getElementById("stations-grid")) {
-      console.log("🎵 Home page detected, initializing station manager");
+      console.log("🎵 Home page detected, handling station manager");
 
-      // IMPORTANT: Make sure we pass the correct reference and validate it
-      console.log("🎵 Current global player reference:", {
-        exists: !!this,
-        type: this.constructor.name,
-        hasAudio: !!this.audioPlayer,
-        hasInitAudio: !!(typeof this.initializeAudio === "function"),
-      });
+      // CRITICAL FIX: Ensure we have the correct station ID
+      const savedStation = this.getSavedStation() || "all";
+
+      // Make sure the global player uses the correct station
+      if (this.currentStationId !== savedStation) {
+        console.log(
+          `🎵 SYNC FIX: Correcting station ID from ${this.currentStationId} to ${savedStation}`,
+        );
+        this.currentStationId = savedStation;
+      }
 
       if (!this.stationManager) {
-        // Pass 'this' which is the GlobalRadioPlayer instance
+        // Create new station manager with correct station ID
+        console.log("🎵 Creating new StationManager");
         this.stationManager = new StationManager(this);
+        this.stationManager.init();
+      } else {
+        // REUSE existing station manager - just rebind DOM elements and sync state
+        console.log("🎵 Reusing existing StationManager, rebinding DOM");
+
+        // Sync station IDs
+        if (this.stationManager.currentStationId !== savedStation) {
+          console.log(
+            `🎵 SYNC FIX: Correcting StationManager station ID from ${this.stationManager.currentStationId} to ${savedStation}`,
+          );
+          this.stationManager.currentStationId = savedStation;
+        }
+
+        // Rebind DOM elements without full re-initialization
+        this.stationManager.rebindDOM();
       }
-      this.stationManager.init();
+
+      // Update episode info for current station (much faster than force update)
+      this.checkForNewEpisode(true);
     } else {
       console.log("🎵 Not on home page, skipping station manager");
     }
@@ -2069,16 +2128,24 @@ class StationManager {
     this.globalRadioPlayer = globalRadioPlayer;
     this.stations = [];
 
-    // *** SYNC STATION IDs BETWEEN BOTH CLASSES ***
-    this.currentStationId = this.getSavedStation() || "all";
-
-    // Update the GlobalRadioPlayer to match
-    if (this.globalRadioPlayer) {
-      this.globalRadioPlayer.currentStationId = this.currentStationId;
+    if (this.globalRadioPlayer && this.globalRadioPlayer.currentStationId) {
+      this.currentStationId = this.globalRadioPlayer.currentStationId;
       console.log(
-        "🎵 Synced station IDs - both now use:",
+        "🎵 StationManager using GlobalRadioPlayer's station:",
         this.currentStationId,
       );
+    } else {
+      // Only fall back to saved station if globalRadioPlayer doesn't have one
+      this.currentStationId = this.getSavedStation() || "all";
+      console.log(
+        "🎵 StationManager falling back to saved station:",
+        this.currentStationId,
+      );
+
+      // Update the GlobalRadioPlayer to match
+      if (this.globalRadioPlayer) {
+        this.globalRadioPlayer.currentStationId = this.currentStationId;
+      }
     }
 
     this.stationsGrid = null;
