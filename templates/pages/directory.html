@@ -97,6 +97,17 @@
                                 {{ end }}
                             </div>
                             <div class="episode-actions">
+                                <button
+                                    class="btn btn-small btn-play"
+                                    data-episode-id="{{ .ID }}"
+                                    data-episode-title="{{ .Title }}"
+                                    data-show-name="{{ .ShowName }}"
+                                    data-episode-image="{{ .ImagePath }}"
+                                    data-episode-duration="{{ .Duration }}"
+                                    title="Play episode from beginning"
+                                >
+                                    <i class="fas fa-play"></i> Play
+                                </button>
                                 <a
                                     href="/download-episode?id={{ .ID }}"
                                     class="btn btn-small btn-secondary"

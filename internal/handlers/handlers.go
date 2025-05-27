@@ -884,3 +884,158 @@ func (h *Handler) shouldSkipTracking(path string) bool {
 
 	return false
 }
+
+// NEW: StreamEpisode streams a specific episode from the beginning
+func (h *Handler) StreamEpisode(w http.ResponseWriter, r *http.Request) {
+	episodeID := r.URL.Query().Get("id")
+	if episodeID == "" {
+		log.Printf("StreamEpisode request missing episode ID")
+		http.Error(w, "Episode ID required", http.StatusBadRequest)
+		return
+	}
+
+	// URL decode the episode ID
+	decodedID, err := url.QueryUnescape(episodeID)
+	if err != nil {
+		log.Printf("Failed to decode episode ID: %v", err)
+		decodedID = episodeID
+	}
+
+	log.Printf("StreamEpisode request for episode ID: %s (decoded: %s)", episodeID, decodedID)
+
+	h.mu.RLock()
+	episode := h.fileStore.GetEpisodeByID(decodedID)
+	h.mu.RUnlock()
+
+	if episode == nil {
+		log.Printf("Episode not found for ID: %s", decodedID)
+		http.Error(w, "Episode not found", http.StatusNotFound)
+		return
+	}
+
+	// Check if file exists
+	if _, err := os.Stat(episode.AudioPath); os.IsNotExist(err) {
+		log.Printf("Episode file not found on disk: %s", episode.AudioPath)
+		http.Error(w, "Episode file not found", http.StatusNotFound)
+		return
+	}
+
+	// Open the file
+	file, err := os.Open(episode.AudioPath)
+	if err != nil {
+		log.Printf("Failed to open audio file: %v", err)
+		http.Error(w, "Audio file not found", http.StatusNotFound)
+		return
+	}
+	defer file.Close()
+
+	// Get file size
+	stat, err := file.Stat()
+	if err != nil {
+		log.Printf("Failed to stat audio file: %v", err)
+		http.Error(w, "Audio file error", http.StatusInternalServerError)
+		return
+	}
+	fileSize := stat.Size()
+
+	// Parse Range header (for seeking during playback)
+	rangeHeader := r.Header.Get("Range")
+	start, end, err := parseRange(rangeHeader, fileSize)
+	if err != nil {
+		log.Printf("Invalid range header: %v", err)
+		http.Error(w, "Invalid range", http.StatusRequestedRangeNotSatisfiable)
+		return
+	}
+
+	// For episode streaming, we always start from the beginning unless there's a range request
+	if rangeHeader == "" {
+		start = 0
+		end = fileSize - 1
+	}
+
+	// Set common headers
+	w.Header().Set("Content-Type", "audio/mpeg")
+	w.Header().Set("Accept-Ranges", "bytes")
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+
+	// Set episode-specific headers for client identification
+	w.Header().Set("X-Episode-ID", episode.ID)
+	w.Header().Set("X-Episode-Title", episode.Title)
+	w.Header().Set("X-Show-Name", episode.ShowName)
+	w.Header().Set("X-Episode-Duration", fmt.Sprintf("%.2f", episode.Duration))
+
+	contentLength := end - start + 1
+
+	if rangeHeader != "" {
+		// Partial content response
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, fileSize))
+		w.Header().Set("Content-Length", strconv.FormatInt(contentLength, 10))
+		w.WriteHeader(http.StatusPartialContent)
+		log.Printf("Serving partial episode content: bytes %d-%d/%d for %s", start, end, fileSize, episode.Title)
+	} else {
+		// Full content response
+		w.Header().Set("Content-Length", strconv.FormatInt(contentLength, 10))
+		w.WriteHeader(http.StatusOK)
+		log.Printf("Serving full episode: %s (%s)", episode.Title, episode.ShowName)
+	}
+
+	// Seek to start position
+	if start > 0 {
+		_, err = file.Seek(start, io.SeekStart)
+		if err != nil {
+			log.Printf("Failed to seek in file: %v", err)
+			return
+		}
+	}
+
+	// Create a limited reader to ensure we don't read past the end
+	limitedReader := io.LimitReader(file, contentLength)
+
+	// Stream the content
+	buffer := make([]byte, 32768) // 32KB buffer
+	written := int64(0)
+
+	for written < contentLength {
+		n, err := limitedReader.Read(buffer)
+		if err != nil && err != io.EOF {
+			log.Printf("Error reading file: %v", err)
+			return
+		}
+		if n == 0 {
+			break
+		}
+
+		bytesToWrite := int64(n)
+		if written+bytesToWrite > contentLength {
+			bytesToWrite = contentLength - written
+		}
+
+		_, writeErr := w.Write(buffer[:bytesToWrite])
+		if writeErr != nil {
+			log.Printf("Error writing to client: %v", writeErr)
+			return
+		}
+
+		// Flush immediately for streaming
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+
+		written += bytesToWrite
+
+		// Check if client disconnected
+		select {
+		case <-r.Context().Done():
+			log.Printf("Client disconnected during episode streaming")
+			return
+		default:
+		}
+
+		// Small delay to control streaming rate
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	log.Printf("Successfully streamed %d bytes of episode: %s", written, episode.Title)
+}

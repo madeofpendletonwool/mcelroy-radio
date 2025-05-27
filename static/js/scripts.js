@@ -421,6 +421,14 @@ class GlobalRadioPlayer {
 
     // Directory page functionality
     this.setupDirectoryFunctionality();
+
+    // Analytics page functionality
+    this.setupAnalyticsFunctionality();
+
+    // NEW: Bind episode play buttons
+    if (document.querySelectorAll(".btn-play").length > 0) {
+      bindDirectoryPlayButtons();
+    }
   }
 
   setupDirectoryFunctionality() {
@@ -563,6 +571,75 @@ class GlobalRadioPlayer {
     );
 
     console.log("🔍 Directory functionality setup complete!");
+  }
+
+  // Replace your existing setupAnalyticsFunctionality method in GlobalRadioPlayer with this:
+
+  setupAnalyticsFunctionality() {
+    console.log("📊 Setting up analytics functionality...");
+
+    // Check if we're on the analytics page
+    if (!window.location.pathname.includes("/analytics")) {
+      console.log("📊 Not on analytics page, skipping analytics setup");
+      return;
+    }
+
+    console.log("📊 Analytics page detected, initializing...");
+
+    // Clear any existing analytics intervals to prevent conflicts
+    if (window.analyticsRefreshInterval) {
+      clearInterval(window.analyticsRefreshInterval);
+      window.analyticsRefreshInterval = null;
+    }
+
+    // Initialize or reinitialize the analytics manager
+    if (!window.analyticsManager) {
+      console.log("📊 Creating new AnalyticsManager instance");
+      window.analyticsManager = new AnalyticsManager();
+    }
+
+    // Small delay to ensure DOM is ready
+    setTimeout(() => {
+      console.log("📊 Calling AnalyticsManager.init()");
+      window.analyticsManager.init();
+    }, 100);
+  }
+
+  initBasicAnalytics() {
+    console.log("📊 Setting up basic analytics...");
+
+    // Basic chart refresh functionality
+    const refreshButton = document.querySelector(".refresh-btn");
+    if (refreshButton && !refreshButton.dataset.bound) {
+      refreshButton.dataset.bound = "true";
+      refreshButton.addEventListener("click", () => {
+        console.log("📊 Refreshing analytics manually");
+        window.location.reload(); // Simple fallback
+      });
+    }
+
+    // If there are time period buttons, rebind them
+    const timePeriodButtons = document.querySelectorAll("[data-period]");
+    timePeriodButtons.forEach((button) => {
+      if (!button.dataset.bound) {
+        button.dataset.bound = "true";
+        button.addEventListener("click", (e) => {
+          const period = e.target.dataset.period;
+          console.log("📊 Time period selected:", period);
+
+          // Update active state
+          timePeriodButtons.forEach((btn) => btn.classList.remove("active"));
+          e.target.classList.add("active");
+
+          // Trigger chart update if possible
+          if (window.refreshAnalytics) {
+            window.refreshAnalytics(period);
+          }
+        });
+      }
+    });
+
+    console.log("📊 Basic analytics setup complete");
   }
 
   // Directory helper methods
@@ -1292,10 +1369,24 @@ class GlobalRadioPlayer {
 
   // Update checkForNewEpisode to include station parameter
   checkForNewEpisode(forceUpdate = false) {
+    // CRITICAL: If we're in episode mode, don't check for station episodes
+    if (this.episodePlayer && this.episodePlayer.isPlayingEpisode) {
+      console.log("🎵 In episode mode, skipping station episode check");
+      return;
+    }
+
+    // If no current station ID, we're in episode mode
+    if (!this.currentStationId) {
+      console.log(
+        "🎵 No station ID set, likely in episode mode, skipping check",
+      );
+      return;
+    }
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
 
-    // FIX 1: Properly construct URL with station parameter
+    // Properly construct URL with station parameter
     const params = new URLSearchParams();
     params.append("station", this.currentStationId);
 
@@ -1349,12 +1440,12 @@ class GlobalRadioPlayer {
           },
         );
 
-        // FIX 2: Validate that the response is for the correct station
+        // Validate that the response is for the correct station
         if (data.station_id && data.station_id !== this.currentStationId) {
           console.warn(
             `🎵 Station mismatch! Expected ${this.currentStationId}, got ${data.station_id}. Ignoring response.`,
           );
-          return; // Don't update UI with wrong station data
+          return;
         }
 
         const shouldUpdate =
@@ -1371,7 +1462,7 @@ class GlobalRadioPlayer {
           this.updateUIWithEpisodeData(data);
           this.updateMediaSessionMetadata(data);
 
-          // FIX 3: Only update audio source if needed and validate station matches
+          // Only update audio source if needed and validate station matches
           if (!forceUpdate) {
             const expectedStreamUrl = `/stream?station=${this.currentStationId}`;
             const currentAudioSrc = this.audioPlayer.src;
@@ -1404,6 +1495,18 @@ class GlobalRadioPlayer {
           console.error("🎵 Error checking for new episode:", err);
         }
       });
+  }
+
+  async returnToStationMode(stationId = "all") {
+    console.log("🎵 Returning to station mode:", stationId);
+
+    // Stop episode mode if active
+    if (this.globalRadioPlayer && this.globalRadioPlayer.episodePlayer) {
+      this.globalRadioPlayer.episodePlayer.stopEpisodeMode();
+    }
+
+    // Switch back to station
+    await this.switchToStation(stationId);
   }
 
   // Add this method to your GlobalRadioPlayer class if it's missing:
@@ -2122,15 +2225,23 @@ class StationManager {
     // Use the correct global player reference
     const realGlobalPlayer = window.globalRadioPlayer;
     if (realGlobalPlayer) {
+      // CRITICAL: Stop episode mode when switching to station
+      if (realGlobalPlayer.episodePlayer) {
+        realGlobalPlayer.episodePlayer.stopEpisodeMode();
+        console.log("🎵 Stopped episode mode for station switch");
+      }
+
       realGlobalPlayer.currentStationId = stationId;
       console.log("🎵 Updated GlobalRadioPlayer station to:", stationId);
 
-      // Restart episode checking with new station
+      // CRITICAL: Always restart episode checking when switching to station
       if (realGlobalPlayer.episodeCheckInterval) {
         clearInterval(realGlobalPlayer.episodeCheckInterval);
         realGlobalPlayer.episodeCheckInterval = null;
       }
+      // Start episode checking for the new station
       realGlobalPlayer.startEpisodeChecking();
+      console.log("🎵 Restarted episode checking for station:", stationId);
 
       // Show notification
       if (realGlobalPlayer.showNotification) {
@@ -3079,4 +3190,948 @@ document.addEventListener("DOMContentLoaded", function () {
     // Auto-rotate quotes every 15 seconds
     setInterval(updateQuoteBox, 15000);
   }
+});
+
+// Episode Player Manager - handles individual episode playback
+class EpisodePlayer {
+  constructor(globalRadioPlayer) {
+    this.globalRadioPlayer = globalRadioPlayer;
+    this.currentEpisodeId = null;
+    this.isPlayingEpisode = false;
+    this.currentEpisodeData = null; // Store the episode data
+
+    console.log("🎵 Episode Player initialized");
+  }
+
+  async playEpisode(episodeId, episodeTitle, showName, imagePath, duration) {
+    console.log("🎵 Playing specific episode:", episodeTitle);
+
+    if (!this.globalRadioPlayer || !this.globalRadioPlayer.audioPlayer) {
+      console.error("🎵 No global audio player available");
+      return;
+    }
+
+    // CRITICAL: Stop station episode checking when switching to episode mode
+    this.stopStationMode();
+
+    const audioPlayer = this.globalRadioPlayer.audioPlayer;
+    const wasPlaying = !audioPlayer.paused;
+
+    try {
+      // Stop current playback
+      if (!audioPlayer.paused) {
+        audioPlayer.pause();
+      }
+
+      // Show loading state
+      if (this.globalRadioPlayer.showLoadingOverlay) {
+        this.globalRadioPlayer.showLoadingOverlay();
+        this.globalRadioPlayer.updateLoadingStatus("Loading episode...");
+      }
+
+      // Store episode data for later reference
+      this.currentEpisodeData = {
+        id: episodeId,
+        title: episodeTitle,
+        show_name: showName,
+        image_path: imagePath,
+        duration: duration,
+        is_playing: true,
+        current_position: 0,
+        time_position: 0,
+      };
+
+      // Construct episode stream URL
+      const streamUrl = `/stream-episode?id=${encodeURIComponent(episodeId)}&t=${Date.now()}`;
+      console.log("🎵 Episode stream URL:", streamUrl);
+
+      // Set up event handlers for the episode
+      const onLoadedMetadata = () => {
+        console.log("🎵 Episode metadata loaded");
+        audioPlayer.removeEventListener("loadedmetadata", onLoadedMetadata);
+        audioPlayer.removeEventListener("error", onError);
+        clearTimeout(timeoutId);
+
+        // Update UI immediately with episode info
+        this.updateUIWithEpisodeInfo(
+          episodeId,
+          episodeTitle,
+          showName,
+          imagePath,
+          duration,
+        );
+
+        // Hide loading overlay
+        if (this.globalRadioPlayer.setStreamReady) {
+          this.globalRadioPlayer.setStreamReady(true);
+        }
+
+        // Try to start playback
+        audioPlayer
+          .play()
+          .then(() => {
+            console.log("🎵 Episode playback started successfully");
+            this.isPlayingEpisode = true;
+            this.currentEpisodeId = episodeId;
+
+            // Start episode progress tracking
+            this.startEpisodeProgressTracking();
+
+            if (this.globalRadioPlayer.showNotification) {
+              this.globalRadioPlayer.showNotification(
+                `Now playing: ${episodeTitle}`,
+                "success",
+              );
+            }
+          })
+          .catch((error) => {
+            console.log("🎵 Episode autoplay prevented:", error);
+            this.isPlayingEpisode = false;
+
+            if (this.globalRadioPlayer.showNotification) {
+              this.globalRadioPlayer.showNotification(
+                "Episode loaded! Click play to start listening.",
+                "info",
+              );
+            }
+          });
+      };
+
+      const onError = (error) => {
+        console.error("🎵 Error loading episode:", error);
+        audioPlayer.removeEventListener("loadedmetadata", onLoadedMetadata);
+        audioPlayer.removeEventListener("error", onError);
+        clearTimeout(timeoutId);
+
+        if (this.globalRadioPlayer.hideLoadingOverlay) {
+          this.globalRadioPlayer.hideLoadingOverlay();
+        }
+
+        if (this.globalRadioPlayer.showNotification) {
+          this.globalRadioPlayer.showNotification(
+            "Failed to load episode. Please try again.",
+            "error",
+          );
+        }
+      };
+
+      // Set timeout for loading
+      const timeoutId = setTimeout(() => {
+        console.log("🎵 Episode loading timeout");
+        audioPlayer.removeEventListener("loadedmetadata", onLoadedMetadata);
+        audioPlayer.removeEventListener("error", onError);
+
+        if (this.globalRadioPlayer.showNotification) {
+          this.globalRadioPlayer.showNotification(
+            "Episode loading is taking longer than expected...",
+            "info",
+          );
+        }
+      }, 10000);
+
+      // Add event listeners
+      audioPlayer.addEventListener("loadedmetadata", onLoadedMetadata, {
+        once: true,
+      });
+      audioPlayer.addEventListener("error", onError, { once: true });
+
+      // Set the episode stream URL
+      audioPlayer.src = streamUrl;
+      audioPlayer.load();
+
+      // Mark that we're now in episode mode (not station mode)
+      this.globalRadioPlayer.currentStationId = null;
+      this.currentEpisodeId = episodeId;
+    } catch (error) {
+      console.error("🎵 Exception during episode playback:", error);
+      if (this.globalRadioPlayer.showNotification) {
+        this.globalRadioPlayer.showNotification(
+          "Failed to play episode: " + error.message,
+          "error",
+        );
+      }
+    }
+  }
+
+  stopStationMode() {
+    console.log("🎵 Stopping station mode to enter episode mode");
+
+    // Clear station checking interval
+    if (this.globalRadioPlayer.episodeCheckInterval) {
+      clearInterval(this.globalRadioPlayer.episodeCheckInterval);
+      this.globalRadioPlayer.episodeCheckInterval = null;
+      console.log("🎵 Stopped station episode checking");
+    }
+
+    // Clear station ID
+    this.globalRadioPlayer.currentStationId = null;
+  }
+
+  startEpisodeProgressTracking() {
+    // Clear any existing tracking
+    if (this.episodeProgressInterval) {
+      clearInterval(this.episodeProgressInterval);
+    }
+
+    // Track episode progress
+    this.episodeProgressInterval = setInterval(() => {
+      if (this.globalRadioPlayer.audioPlayer && this.currentEpisodeData) {
+        const currentTime = this.globalRadioPlayer.audioPlayer.currentTime;
+        this.currentEpisodeData.time_position = currentTime;
+        this.currentEpisodeData.current_position = Math.floor(
+          currentTime * 16000,
+        ); // Rough byte estimate
+        this.currentEpisodeData.is_playing =
+          !this.globalRadioPlayer.audioPlayer.paused;
+      }
+    }, 1000);
+  }
+
+  updateUIWithEpisodeInfo(
+    episodeId,
+    episodeTitle,
+    showName,
+    imagePath,
+    duration,
+  ) {
+    console.log("🎵 Updating UI with episode info:", episodeTitle);
+
+    // Update global player bar
+    const playerTitle = document.getElementById("player-episode-title");
+    const playerShowName = document.getElementById("player-show-name");
+    const playerCover = document.getElementById("player-episode-cover");
+    const playerDuration = document.getElementById("player-duration");
+
+    if (playerTitle) playerTitle.textContent = episodeTitle;
+    if (playerShowName) playerShowName.textContent = showName;
+    if (playerCover && imagePath) {
+      playerCover.src = imagePath;
+      playerCover.alt = `${showName} Cover Art`;
+    }
+    if (playerDuration && duration) {
+      playerDuration.textContent = this.formatTime(duration);
+    }
+
+    // Update homepage elements if they exist
+    const homeTitle = document.getElementById("episode-title");
+    const homeShowName = document.getElementById("show-name");
+    const homeCover = document.getElementById("episode-cover-art");
+
+    if (homeTitle) homeTitle.textContent = episodeTitle;
+    if (homeShowName) homeShowName.textContent = showName;
+    if (homeCover && imagePath) {
+      homeCover.src = imagePath;
+      homeCover.alt = `${showName} Cover Art`;
+    }
+
+    // Update page title
+    document.title = `${episodeTitle} - ${showName} | McElroy Radio`;
+
+    // Update media session if available
+    if (this.globalRadioPlayer.updateMediaSessionMetadata) {
+      this.globalRadioPlayer.updateMediaSessionMetadata({
+        title: episodeTitle,
+        show_name: showName,
+        image_path: imagePath,
+      });
+    }
+  }
+
+  formatTime(seconds) {
+    if (isNaN(seconds) || !isFinite(seconds) || seconds < 0) {
+      return "00:00";
+    }
+
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+
+    if (hours > 0) {
+      return `${hours}:${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
+    } else {
+      return `${minutes.toString().padStart(2, "0")}:${remainingSeconds.toString().padStart(2, "0")}`;
+    }
+  }
+
+  isCurrentlyPlayingEpisode(episodeId) {
+    return this.isPlayingEpisode && this.currentEpisodeId === episodeId;
+  }
+
+  getCurrentEpisodeData() {
+    return this.currentEpisodeData;
+  }
+
+  stopEpisodeMode() {
+    console.log("🎵 Stopping episode mode");
+    this.isPlayingEpisode = false;
+    this.currentEpisodeId = null;
+    this.currentEpisodeData = null;
+
+    if (this.episodeProgressInterval) {
+      clearInterval(this.episodeProgressInterval);
+      this.episodeProgressInterval = null;
+    }
+  }
+}
+
+// Add this to the GlobalRadioPlayer.bindPageSpecificElements method:
+function bindDirectoryPlayButtons() {
+  // Remove existing episode player if it exists
+  if (window.globalRadioPlayer && !window.globalRadioPlayer.episodePlayer) {
+    window.globalRadioPlayer.episodePlayer = new EpisodePlayer(
+      window.globalRadioPlayer,
+    );
+  }
+
+  // Bind play buttons in directory
+  document.querySelectorAll(".btn-play").forEach((button) => {
+    button.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      const episodeId = button.dataset.episodeId;
+      const episodeTitle = button.dataset.episodeTitle;
+      const showName = button.dataset.showName;
+      const imagePath = button.dataset.episodeImage;
+      const duration = parseFloat(button.dataset.episodeDuration);
+
+      if (window.globalRadioPlayer && window.globalRadioPlayer.episodePlayer) {
+        window.globalRadioPlayer.episodePlayer.playEpisode(
+          episodeId,
+          episodeTitle,
+          showName,
+          imagePath,
+          duration,
+        );
+      }
+    });
+  });
+
+  console.log(
+    "🎵 Bound",
+    document.querySelectorAll(".btn-play").length,
+    "episode play buttons",
+  );
+}
+
+// Analytics Chart Manager
+class AnalyticsManager {
+  constructor() {
+    this.chart = null;
+    this.refreshInterval = null;
+    this.isInitialized = false;
+  }
+
+  init() {
+    if (this.isInitialized) {
+      console.log("📊 Analytics already initialized, cleaning up first");
+      this.cleanup();
+    }
+
+    console.log("📊 Initializing Analytics Manager");
+
+    // Check if we're actually on the analytics page
+    if (!this.isOnAnalyticsPage()) {
+      console.log("📊 Not on analytics page, skipping initialization");
+      return;
+    }
+
+    this.setupChart();
+    this.loadSummaryData();
+    this.loadRecentVisits();
+    this.setupControls();
+    this.startAutoRefresh();
+    this.isInitialized = true;
+
+    console.log("📊 Analytics Manager initialized successfully");
+  }
+
+  isOnAnalyticsPage() {
+    const isAnalyticsURL = window.location.pathname.includes("/analytics");
+    const hasAnalyticsElements = !!(
+      document.getElementById("timeseries-chart") ||
+      document.querySelector(".analytics-container") ||
+      document.querySelector(".analytics-header") ||
+      document.querySelector(".chart-container")
+    );
+
+    console.log("📊 Analytics page check:", {
+      url: window.location.pathname,
+      isAnalyticsURL,
+      hasAnalyticsElements,
+      result: isAnalyticsURL && (hasAnalyticsElements || isAnalyticsURL),
+    });
+
+    // If URL indicates analytics page, proceed even if elements aren't found yet
+    return isAnalyticsURL;
+  }
+
+  setupChart() {
+    const canvas = document.getElementById("timeseries-chart");
+    if (!canvas) {
+      console.warn("📊 Chart canvas not found");
+      return;
+    }
+
+    // Destroy existing chart if it exists
+    if (this.chart) {
+      this.chart.destroy();
+      this.chart = null;
+    }
+
+    // Check if Chart.js is loaded
+    if (typeof Chart === "undefined") {
+      console.log("📊 Loading Chart.js...");
+      this.loadChartJS().then(() => {
+        this.createChart(canvas);
+      });
+    } else {
+      this.createChart(canvas);
+    }
+  }
+
+  loadChartJS() {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src =
+        "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js";
+      script.onload = () => {
+        console.log("📊 Chart.js loaded successfully");
+        resolve();
+      };
+      script.onerror = () => {
+        console.error("📊 Failed to load Chart.js");
+        reject();
+      };
+      document.head.appendChild(script);
+    });
+  }
+
+  createChart(canvas) {
+    console.log("📊 Creating time series chart");
+
+    const ctx = canvas.getContext("2d");
+
+    this.chart = new Chart(ctx, {
+      type: "line",
+      data: {
+        labels: [],
+        datasets: [
+          {
+            label: "Visits",
+            data: [],
+            borderColor: "rgba(94, 96, 206, 1)",
+            backgroundColor: "rgba(94, 96, 206, 0.1)",
+            borderWidth: 2,
+            fill: true,
+            tension: 0.3,
+            pointBackgroundColor: "rgba(94, 96, 206, 1)",
+            pointBorderColor: "rgba(94, 96, 206, 1)",
+            pointHoverRadius: 6,
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: false,
+          },
+          tooltip: {
+            mode: "index",
+            intersect: false,
+            backgroundColor: "rgba(0, 0, 0, 0.8)",
+            titleColor: "white",
+            bodyColor: "white",
+            cornerRadius: 6,
+          },
+        },
+        scales: {
+          x: {
+            grid: {
+              color: "rgba(200, 200, 200, 0.2)",
+            },
+          },
+          y: {
+            beginAtZero: true,
+            ticks: {
+              precision: 0,
+            },
+            grid: {
+              color: "rgba(200, 200, 200, 0.2)",
+            },
+          },
+        },
+        interaction: {
+          mode: "nearest",
+          axis: "x",
+          intersect: false,
+        },
+      },
+    });
+
+    const loadingSpinner = document.getElementById("chart-loading");
+    if (loadingSpinner) {
+      console.log("📊 Hiding loading spinner");
+      loadingSpinner.classList.add("hidden");
+      // or loadingSpinner.style.display = 'none';
+    }
+
+    // Load initial data
+    this.loadTimeSeriesData("hour");
+  }
+
+  loadTimeSeriesData(period = "hour") {
+    console.log(`📊 Loading time series data for period: ${period}`);
+
+    const url = `/analytics-api?type=timeseries&period=${period}&t=${Date.now()}`;
+
+    fetch(url)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        return response.json();
+      })
+      .then((data) => {
+        console.log(`📊 Time series data loaded:`, data);
+        this.updateChart(data);
+        this.updateChartStats(data);
+      })
+      .catch((error) => {
+        console.error("📊 Error loading time series data:", error);
+        this.showChartError(error.message);
+      });
+  }
+
+  updateChart(data) {
+    if (!this.chart || !data) {
+      console.warn("📊 Chart not available or no data to update");
+      return;
+    }
+
+    // Update chart data
+    this.chart.data.labels = data.labels || [];
+    this.chart.data.datasets[0].data = data.data || [];
+
+    // Update the chart with animation
+    this.chart.update("active");
+
+    // Update period display
+    const periodDisplay = document.getElementById("current-period");
+    if (periodDisplay) {
+      periodDisplay.textContent = data.period || period;
+    }
+
+    console.log(
+      "📊 Chart updated with",
+      data.labels?.length || 0,
+      "data points",
+    );
+  }
+
+  // Replace your updateChartStats method in AnalyticsManager with this:
+
+  updateChartStats(data) {
+    const stats = data.data || [];
+    const total = stats.reduce((sum, val) => sum + val, 0);
+    const average = stats.length > 0 ? (total / stats.length).toFixed(1) : 0;
+    const max = stats.length > 0 ? Math.max(...stats) : 0;
+
+    // Update stats using your template's actual IDs
+    this.updateElement("period-total", total); // Your template uses period-total
+    this.updateElement("period-average", average); // Your template uses period-average
+    this.updateElement("period-peak", max); // Your template uses period-peak
+
+    // Also try the old IDs as fallback
+    this.updateElement("chart-total", total);
+    this.updateElement("chart-average", average);
+    this.updateElement("chart-peak", max);
+
+    console.log("📊 Updated chart stats:", { total, average, max });
+  }
+
+  loadSummaryData() {
+    console.log("📊 Loading summary data");
+
+    const url = `/analytics-api?t=${Date.now()}`;
+
+    fetch(url)
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+        return response.json();
+      })
+      .then((data) => {
+        console.log("📊 Summary data loaded:", data);
+        this.updateSummaryCards(data);
+      })
+      .catch((error) => {
+        console.error("📊 Error loading summary data:", error);
+      });
+  }
+
+  updateSummaryCards(data) {
+    console.log("📊 Updating summary cards with data:", data);
+
+    // Your template doesn't have IDs on the stat values, so we need to update by position
+    const statValues = document.querySelectorAll(".stat-value");
+    console.log("📊 Found stat value elements:", statValues.length);
+
+    if (statValues.length >= 3) {
+      // Update by position (first, second, third stat card)
+      this.animateNumberElement(statValues[0], data.total_visits || 0); // Total visits
+      this.animateNumberElement(statValues[1], data.today_visits || 0); // Today
+      this.animateNumberElement(statValues[2], data.week_visits || 0); // This week
+
+      if (statValues[3]) {
+        // Fourth card shows region count
+        const regionCount = data.region_breakdown
+          ? Object.keys(data.region_breakdown).length
+          : 0;
+        this.animateNumberElement(statValues[3], regionCount);
+      }
+    } else {
+      console.warn("📊 Not enough stat value elements found");
+    }
+
+    // Update breakdowns if elements exist (these probably don't exist in your template)
+    this.updateBreakdown("region-breakdown", data.region_breakdown);
+    this.updateBreakdown("browser-breakdown", data.browser_breakdown);
+    this.updateBreakdown("page-breakdown", data.popular_pages);
+  }
+
+  animateNumberElement(element, targetValue) {
+    if (!element) return;
+
+    const currentValue = parseInt(element.textContent.replace(/,/g, "")) || 0;
+    const duration = 1000;
+    const startTime = Date.now();
+
+    const animate = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+
+      // Easing function (ease-out)
+      const easeOut = 1 - Math.pow(1 - progress, 3);
+      const value = Math.round(
+        currentValue + (targetValue - currentValue) * easeOut,
+      );
+
+      element.textContent = value.toLocaleString();
+
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      }
+    };
+
+    animate();
+  }
+
+  updateBreakdown(containerId, data) {
+    const container = document.getElementById(containerId);
+    if (!container || !data) return;
+
+    const entries = Object.entries(data)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 5);
+
+    container.innerHTML = entries
+      .map(
+        ([key, value]) => `
+      <div class="breakdown-item">
+        <span class="breakdown-label">${key}</span>
+        <span class="breakdown-value">${value}</span>
+      </div>
+    `,
+      )
+      .join("");
+  }
+
+  loadRecentVisits() {
+    console.log("📊 Loading recent visits");
+
+    const url = `/analytics-api?type=recent&limit=20&t=${Date.now()}`;
+
+    fetch(url)
+      .then((response) => response.json())
+      .then((data) => {
+        console.log("📊 Recent visits loaded:", data);
+        this.updateRecentVisitsTable(data.visits || []);
+      })
+      .catch((error) => {
+        console.error("📊 Error loading recent visits:", error);
+      });
+  }
+
+  updateRecentVisitsTable(visits) {
+    // First try to find a standard table
+    let tableBody = document.querySelector("#recent-visits-table tbody");
+
+    if (!tableBody) {
+      // Look for your template's div-based table structure
+      const visitsTable = document.querySelector(".visits-table");
+      if (visitsTable) {
+        console.log("📊 Found div-based visits table, updating...");
+        this.updateVisitsDiv(visits);
+        return;
+      }
+
+      console.warn("📊 No recent visits table found");
+      return;
+    }
+
+    // Standard table update (fallback)
+    if (visits.length === 0) {
+      tableBody.innerHTML =
+        '<tr><td colspan="4" style="text-align: center; color: #666;">No recent visits</td></tr>';
+      return;
+    }
+
+    tableBody.innerHTML = visits
+      .slice(0, 20)
+      .map(
+        (visit) => `
+      <tr>
+        <td>${new Date(visit.timestamp).toLocaleString()}</td>
+        <td><span class="region-badge">${visit.region || "Unknown"}</span></td>
+        <td><code>${visit.path || "/"}</code></td>
+        <td><span class="browser-badge">${visit.user_agent || "Unknown"}</span></td>
+      </tr>
+    `,
+      )
+      .join("");
+
+    console.log(`📊 Updated recent visits table with ${visits.length} entries`);
+  }
+
+  updateVisitsDiv(visits) {
+    const visitsTable = document.querySelector(".visits-table");
+    if (!visitsTable) return;
+
+    // Clear existing rows (keep header)
+    const tableRows = visitsTable.querySelectorAll(".table-row");
+    tableRows.forEach((row) => row.remove());
+
+    if (visits.length === 0) {
+      visitsTable.insertAdjacentHTML(
+        "beforeend",
+        '<div class="table-row" style="text-align: center; color: #666; grid-column: 1 / -1;">No recent visits</div>',
+      );
+      return;
+    }
+
+    // Add new rows using your template's structure
+    visits.slice(0, 20).forEach((visit) => {
+      const rowHTML = `
+        <div class="table-row">
+          <div class="col-time">${new Date(visit.timestamp).toLocaleString()}</div>
+          <div class="col-region">${visit.region || "Unknown"}</div>
+          <div class="col-page">${visit.path || "/"}</div>
+          <div class="col-browser">${visit.user_agent || "Unknown"}</div>
+        </div>
+      `;
+      visitsTable.insertAdjacentHTML("beforeend", rowHTML);
+    });
+
+    console.log(`📊 Updated visits div with ${visits.length} entries`);
+  }
+
+  setupControls() {
+    console.log("📊 Setting up analytics controls");
+
+    // Period selection buttons
+    const periodButtons = document.querySelectorAll("[data-period]");
+    periodButtons.forEach((button) => {
+      // Remove existing listeners to prevent duplicates
+      const newButton = button.cloneNode(true);
+      button.parentNode.replaceChild(newButton, button);
+
+      newButton.addEventListener("click", (e) => {
+        e.preventDefault();
+        const period = newButton.dataset.period;
+
+        console.log(`📊 Period changed to: ${period}`);
+
+        // Update active state
+        periodButtons.forEach((btn) => btn.classList.remove("active"));
+        newButton.classList.add("active");
+
+        // Load new data
+        this.loadTimeSeriesData(period);
+      });
+    });
+
+    // Refresh button
+    const refreshButton = document.querySelector(".refresh-btn");
+    if (refreshButton) {
+      const newRefreshButton = refreshButton.cloneNode(true);
+      refreshButton.parentNode.replaceChild(newRefreshButton, refreshButton);
+
+      newRefreshButton.addEventListener("click", (e) => {
+        e.preventDefault();
+        console.log("📊 Manual refresh triggered");
+
+        // Add loading state
+        newRefreshButton.innerHTML =
+          '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
+        newRefreshButton.disabled = true;
+
+        this.refreshAll().finally(() => {
+          newRefreshButton.innerHTML =
+            '<i class="fas fa-sync-alt"></i> Refresh';
+          newRefreshButton.disabled = false;
+        });
+      });
+    }
+
+    console.log("📊 Controls setup complete");
+  }
+
+  refreshAll() {
+    console.log("📊 Refreshing all analytics data");
+
+    const activePeriod =
+      document.querySelector("[data-period].active")?.dataset.period || "hour";
+
+    const promises = [
+      this.loadTimeSeriesData(activePeriod),
+      this.loadSummaryData(),
+      this.loadRecentVisits(),
+    ];
+
+    return Promise.allSettled(promises);
+  }
+
+  startAutoRefresh() {
+    // Clear existing interval
+    if (this.refreshInterval) {
+      clearInterval(this.refreshInterval);
+    }
+
+    // Auto-refresh every 30 seconds
+    this.refreshInterval = setInterval(() => {
+      if (this.isOnAnalyticsPage()) {
+        console.log("📊 Auto-refreshing analytics data");
+        this.refreshAll();
+      } else {
+        console.log("📊 Not on analytics page, stopping auto-refresh");
+        this.cleanup();
+      }
+    }, 30000);
+
+    console.log("📊 Auto-refresh started (30 second interval)");
+  }
+
+  // Utility methods
+  updateElement(id, value) {
+    const element = document.getElementById(id);
+    if (element) {
+      element.textContent =
+        typeof value === "number" ? value.toLocaleString() : value;
+    }
+  }
+
+  animateNumber(elementId, targetValue) {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+
+    const currentValue = parseInt(element.textContent.replace(/,/g, "")) || 0;
+    const duration = 1000;
+    const startTime = Date.now();
+
+    const animate = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+
+      // Easing function (ease-out)
+      const easeOut = 1 - Math.pow(1 - progress, 3);
+      const value = Math.round(
+        currentValue + (targetValue - currentValue) * easeOut,
+      );
+
+      element.textContent = value.toLocaleString();
+
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      }
+    };
+
+    animate();
+  }
+
+  showChartError(message) {
+    const canvas = document.getElementById("timeseries-chart");
+    if (!canvas) return;
+
+    const container = canvas.parentNode;
+    container.innerHTML = `
+      <div class="chart-error">
+        <i class="fas fa-exclamation-triangle"></i>
+        <h3>Chart Error</h3>
+        <p>${message}</p>
+        <button onclick="window.analyticsManager.init()" class="btn btn-primary">
+          Try Again
+        </button>
+      </div>
+    `;
+  }
+
+  cleanup() {
+    console.log("📊 Cleaning up analytics");
+
+    if (this.refreshInterval) {
+      clearInterval(this.refreshInterval);
+      this.refreshInterval = null;
+    }
+
+    if (this.chart) {
+      this.chart.destroy();
+      this.chart = null;
+    }
+
+    this.isInitialized = false;
+  }
+}
+
+// Fallback analytics initialization for direct page loads
+document.addEventListener("DOMContentLoaded", function () {
+  // Add a small delay to ensure everything is loaded
+  setTimeout(() => {
+    if (
+      window.location.pathname.includes("/analytics") &&
+      window.globalRadioPlayer &&
+      (!window.analyticsManager || !window.analyticsManager.isInitialized)
+    ) {
+      console.log("📊 Fallback: Initializing analytics on DOMContentLoaded");
+
+      if (!window.analyticsManager) {
+        window.analyticsManager = new AnalyticsManager();
+      }
+
+      // Force initialization
+      window.analyticsManager.init();
+    }
+  }, 500);
+});
+
+// Additional fallback - try after window load
+window.addEventListener("load", function () {
+  setTimeout(() => {
+    if (
+      window.location.pathname.includes("/analytics") &&
+      window.globalRadioPlayer &&
+      (!window.analyticsManager || !window.analyticsManager.isInitialized)
+    ) {
+      console.log("📊 Final fallback: Initializing analytics on window load");
+
+      if (!window.analyticsManager) {
+        window.analyticsManager = new AnalyticsManager();
+      }
+
+      window.analyticsManager.init();
+    }
+  }, 1000);
 });
