@@ -199,6 +199,7 @@ func (m *Manager) advanceStationEpisode(station *models.Station) {
 		if len(station.RecentlyPlayed) > 10 {
 			station.RecentlyPlayed = station.RecentlyPlayed[:10]
 		}
+		log.Printf("Station %s finished episode: %s", station.Name, station.CurrentEpisode.Title)
 	}
 
 	// Find unplayed episodes
@@ -219,13 +220,18 @@ func (m *Manager) advanceStationEpisode(station *models.Station) {
 	// Select random unplayed episode
 	randomIndex := m.rng.Intn(len(unplayedEpisodes))
 	station.CurrentEpisode = unplayedEpisodes[randomIndex]
+
+	// CRITICAL: Reset all timing when advancing to new episode
 	station.EpisodeStartTime = time.Now()
 	station.TimePosition = 0
 	station.CurrentPosition = 0
+
+	// Mark as played and refresh random fact
 	station.PlayedEpisodes[station.CurrentEpisode.ID] = true
 	station.CurrentEpisode.RandomFact = models.GetRandomFact()
 
-	log.Printf("Station %s now playing: %s", station.Name, station.CurrentEpisode.Title)
+	log.Printf("Station %s advanced to new episode: %s (duration: %.2fs)",
+		station.Name, station.CurrentEpisode.Title, station.CurrentEpisode.Duration)
 }
 
 // loadCustomStations loads custom stations from config file

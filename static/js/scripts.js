@@ -938,6 +938,9 @@ class GlobalRadioPlayer {
 
     this.audioPlayer.addEventListener("play", () => {
       this.isPlaying = true;
+      this.userPaused = false; // User didn't pause, they started playing
+      this.shouldAutoplay = true; // Radio should continue playing
+
       if (this.playIcon) {
         this.playIcon.classList.remove("fa-play");
         this.playIcon.classList.add("fa-pause");
@@ -949,13 +952,22 @@ class GlobalRadioPlayer {
 
     this.audioPlayer.addEventListener("pause", () => {
       this.isPlaying = false;
+
+      // Only mark as user paused if this wasn't triggered by an 'ended' event
+      if (!this.audioPlayer.ended) {
+        this.userPaused = true;
+        this.shouldAutoplay = false; // User paused, don't autoplay next episode
+        console.log("Audio paused by user");
+      } else {
+        console.log("Audio paused due to episode ending");
+      }
+
       if (this.playIcon) {
         this.playIcon.classList.remove("fa-pause");
         this.playIcon.classList.add("fa-play");
       }
       this.stopProgressUpdates();
       this.updateMediaSessionPlaybackState("paused");
-      console.log("Audio paused");
     });
 
     this.audioPlayer.addEventListener("timeupdate", () => {
@@ -988,8 +1000,11 @@ class GlobalRadioPlayer {
     this.audioPlayer.addEventListener("ended", () => {
       console.log("Audio stream ended");
       this.isPlaying = false;
+      this.userPaused = false; // Episode ended naturally, not user action
+      // Keep shouldAutoplay as-is - if it was true, next episode should autoplay
+
       this.stopProgressUpdates();
-      setTimeout(() => this.checkForNewEpisode(), 2000);
+      setTimeout(() => this.checkForNewEpisode(), 6000);
     });
   }
 
@@ -1426,7 +1441,8 @@ class GlobalRadioPlayer {
     }, 1500); // Much shorter than before
   }
 
-  // Update checkForNewEpisode to include station parameter
+  // Replace the checkForNewEpisode method in GlobalRadioPlayer with this fixed version:
+
   checkForNewEpisode(forceUpdate = false) {
     // CRITICAL: If we're in episode mode, don't check for station episodes
     if (this.episodePlayer && this.episodePlayer.isPlayingEpisode) {
@@ -1496,6 +1512,10 @@ class GlobalRadioPlayer {
             stationId: data.station_id,
             serverStationId: data.station_id,
             clientStationId: this.currentStationId,
+            duration: data.duration,
+            timePosition: data.time_position,
+            serverTime: new Date().toISOString(),
+            isExactlySameEpisode: data.id === this.currentEpisodeId,
           },
         );
 
@@ -1507,38 +1527,31 @@ class GlobalRadioPlayer {
           return;
         }
 
-        const shouldUpdate =
-          forceUpdate || (data.id && data.id !== this.currentEpisodeId);
+        const isNewEpisode = data.id && data.id !== this.currentEpisodeId;
+        const shouldUpdate = forceUpdate || isNewEpisode;
 
         if (shouldUpdate) {
-          if (data.id !== this.currentEpisodeId) {
-            console.log("🎵 New episode detected:", data.title);
+          if (isNewEpisode) {
+            console.log(
+              "🎵 New episode detected, handling transition:",
+              data.title,
+            );
+            this.handleEpisodeTransition(data);
           } else if (forceUpdate) {
             console.log("🎵 Forced update - refreshing episode display");
+            // For forced updates, also check if we need to transition based on time position
+            if (data.time_position !== undefined && data.time_position < 5) {
+              console.log(
+                "🎵 Forced update shows episode restarted - likely new episode",
+              );
+              this.handleEpisodeTransition(data);
+            } else {
+              this.updateUIWithEpisodeData(data);
+              this.updateMediaSessionMetadata(data);
+            }
           }
 
           this.currentEpisodeId = data.id;
-          this.updateUIWithEpisodeData(data);
-          this.updateMediaSessionMetadata(data);
-
-          // Only update audio source if needed and validate station matches
-          if (!forceUpdate) {
-            const expectedStreamUrl = `/stream?station=${this.currentStationId}`;
-            const currentAudioSrc = this.audioPlayer.src;
-
-            if (!currentAudioSrc.includes(expectedStreamUrl)) {
-              const streamUrl = `${expectedStreamUrl}&t=${Date.now()}`;
-              console.log(
-                `🎵 Updating audio source to match station: ${streamUrl}`,
-              );
-              this.audioPlayer.src = streamUrl;
-              this.audioPlayer.currentTime = 0;
-
-              if (this.isPlaying) {
-                this.audioPlayer.play().catch(console.error);
-              }
-            }
-          }
         }
 
         // Always update UI with latest data for forced updates
@@ -1554,6 +1567,211 @@ class GlobalRadioPlayer {
           console.error("🎵 Error checking for new episode:", err);
         }
       });
+  }
+
+  // NEW METHOD: Handle the transition to a new episode
+  // FIXED: Replace the handleEpisodeTransition method in GlobalRadioPlayer class
+
+  handleEpisodeTransition(newEpisodeData) {
+    console.log("🎵 Handling episode transition to:", newEpisodeData.title);
+
+    if (!this.audioPlayer) {
+      console.error("🎵 No audio player available for episode transition");
+      return;
+    }
+
+    // CRITICAL FIX: Check if we should continue playing based on user intent, not audio state
+    // If user didn't manually pause AND we should autoplay, continue playing
+    const shouldContinuePlaying = this.shouldAutoplay && !this.userPaused;
+    const currentVolume = this.audioPlayer.volume;
+    const currentMuted = this.audioPlayer.muted;
+
+    console.log(
+      `🎵 Episode transition - should continue playing: ${shouldContinuePlaying}, shouldAutoplay: ${this.shouldAutoplay}, userPaused: ${this.userPaused}, audio paused: ${this.audioPlayer.paused}, audio ended: ${this.audioPlayer.ended}, isPlaying flag: ${this.isPlaying}, volume: ${currentVolume}`,
+    );
+
+    // Update UI immediately
+    this.updateUIWithEpisodeData(newEpisodeData);
+    this.updateMediaSessionMetadata(newEpisodeData);
+
+    // Construct new stream URL for the station
+    const streamParams = new URLSearchParams();
+    streamParams.append("station", this.currentStationId);
+    streamParams.append("t", Date.now().toString());
+    const newStreamUrl = `/stream?${streamParams.toString()}`;
+
+    console.log("🎵 Transitioning to new episode stream:", newStreamUrl);
+
+    // Set up handlers for the new episode stream
+    const onLoadedMetadata = () => {
+      console.log("🎵 New episode stream loaded");
+      this.audioPlayer.removeEventListener("loadedmetadata", onLoadedMetadata);
+      this.audioPlayer.removeEventListener("error", onError);
+      clearTimeout(transitionTimeout);
+
+      // Update duration display with actual duration
+      if (this.audioPlayer.duration && this.durationEl) {
+        this.durationEl.textContent = this.formatTime(
+          this.audioPlayer.duration,
+        );
+      }
+
+      // Restore audio settings
+      this.audioPlayer.volume = currentVolume;
+      this.audioPlayer.muted = currentMuted;
+
+      // Seek to server's current position for this episode
+      const serverTimePosition = newEpisodeData.time_position || 0;
+      if (serverTimePosition > 0 && this.audioPlayer.duration) {
+        const seekPosition = Math.min(
+          serverTimePosition,
+          this.audioPlayer.duration - 1,
+        );
+        console.log(
+          `🎵 Seeking to server position: ${seekPosition}s (duration: ${this.audioPlayer.duration}s)`,
+        );
+        this.audioPlayer.currentTime = seekPosition;
+      } else {
+        // Start from beginning for new episode
+        this.audioPlayer.currentTime = 0;
+      }
+
+      // FIXED: Resume playback if the radio should continue playing
+      if (shouldContinuePlaying) {
+        console.log("🎵 Radio should continue playing, attempting autoplay...");
+
+        // Strategy 1: Immediate play attempt
+        const playPromise = this.audioPlayer.play();
+
+        if (playPromise !== undefined) {
+          playPromise
+            .then(() => {
+              console.log("🎵 Successfully resumed playback on new episode");
+              this.isPlaying = true; // Update our state
+              this.showNotification(
+                `Now playing: ${newEpisodeData.title}`,
+                "success",
+              );
+            })
+            .catch((error) => {
+              console.log("🎵 Immediate autoplay failed:", error.message);
+
+              // Strategy 2: Try again after a short delay
+              setTimeout(() => {
+                console.log("🎵 Attempting delayed autoplay...");
+                const delayedPlayPromise = this.audioPlayer.play();
+
+                if (delayedPlayPromise !== undefined) {
+                  delayedPlayPromise
+                    .then(() => {
+                      console.log("🎵 Delayed autoplay successful");
+                      this.isPlaying = true; // Update our state
+                      this.showNotification(
+                        `Now playing: ${newEpisodeData.title}`,
+                        "success",
+                      );
+                    })
+                    .catch((delayedError) => {
+                      console.log(
+                        "🎵 Delayed autoplay also failed:",
+                        delayedError.message,
+                      );
+
+                      // Strategy 3: Update UI to show play state and notify user
+                      this.updatePlayButtonState(false);
+                      this.isPlaying = false;
+                      this.showNotification(
+                        `New episode ready: ${newEpisodeData.title} - Click play to continue`,
+                        "info",
+                      );
+                    });
+                }
+              }, 500);
+            });
+        } else {
+          // Fallback for very old browsers
+          console.log("🎵 Play promise not supported, assuming success");
+          this.isPlaying = true;
+          this.showNotification(
+            `Now playing: ${newEpisodeData.title}`,
+            "success",
+          );
+        }
+      } else {
+        console.log("🎵 Radio was paused, not auto-resuming new episode");
+        this.isPlaying = false;
+        this.updatePlayButtonState(false);
+        this.showNotification(`New episode: ${newEpisodeData.title}`, "info");
+      }
+    };
+
+    const onError = (error) => {
+      console.error("🎵 Error loading new episode stream:", error);
+      this.audioPlayer.removeEventListener("loadedmetadata", onLoadedMetadata);
+      this.audioPlayer.removeEventListener("error", onError);
+      clearTimeout(transitionTimeout);
+
+      this.showNotification(
+        "Failed to load new episode. Please refresh if issues persist.",
+        "error",
+      );
+    };
+
+    // Set up timeout for transition
+    const transitionTimeout = setTimeout(() => {
+      console.log("🎵 Episode transition timeout");
+      this.audioPlayer.removeEventListener("loadedmetadata", onLoadedMetadata);
+      this.audioPlayer.removeEventListener("error", onError);
+
+      // Force the UI update even if audio fails
+      if (this.audioPlayer.duration && this.durationEl) {
+        this.durationEl.textContent = this.formatTime(
+          this.audioPlayer.duration,
+        );
+      }
+
+      // If it should continue playing, try one more time
+      if (shouldContinuePlaying) {
+        console.log("🎵 Timeout reached, attempting final autoplay...");
+        this.audioPlayer
+          .play()
+          .then(() => {
+            this.isPlaying = true;
+          })
+          .catch(() => {
+            this.updatePlayButtonState(false);
+            this.isPlaying = false;
+            this.showNotification(
+              "Episode loaded - click play to continue",
+              "info",
+            );
+          });
+      }
+    }, 8000);
+
+    // Add event listeners
+    this.audioPlayer.addEventListener("loadedmetadata", onLoadedMetadata, {
+      once: true,
+    });
+    this.audioPlayer.addEventListener("error", onError, { once: true });
+
+    // Switch to new episode stream
+    this.audioPlayer.src = newStreamUrl;
+    this.audioPlayer.load();
+  }
+
+  // NEW METHOD: Update play button state
+  updatePlayButtonState(isPlaying) {
+    this.isPlaying = isPlaying;
+    if (this.playIcon) {
+      if (isPlaying) {
+        this.playIcon.classList.remove("fa-play");
+        this.playIcon.classList.add("fa-pause");
+      } else {
+        this.playIcon.classList.remove("fa-pause");
+        this.playIcon.classList.add("fa-play");
+      }
+    }
   }
 
   async returnToStationMode(stationId = "all") {
@@ -1703,9 +1921,16 @@ class GlobalRadioPlayer {
     if (!this.audioPlayer || !this.isStreamReady) return;
 
     if (this.isPlaying) {
+      // User manually pausing
+      this.userPaused = true;
+      this.shouldAutoplay = false;
       this.audioPlayer.pause();
-      console.log("Paused");
+      console.log("User paused playback");
     } else {
+      // User manually starting
+      this.userPaused = false;
+      this.shouldAutoplay = true;
+
       if (this.isMuted) {
         this.showNotification("Click the volume button to unmute audio");
       }
@@ -1719,7 +1944,7 @@ class GlobalRadioPlayer {
       if (playPromise !== undefined) {
         playPromise
           .then(() => {
-            console.log("Playing");
+            console.log("User started playback");
           })
           .catch((error) => {
             console.error("Play failed:", error);
