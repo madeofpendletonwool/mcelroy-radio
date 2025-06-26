@@ -70,12 +70,20 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
+<<<<<<< HEAD
 		Port:             port,
 		RSSFeeds:         rssFeeds,
 		TemplatesDir:     templatesDir,
 		StaticDir:        staticDir,
 		StationConfigDir: stationConfigDir,
 		Context:          context.Background(),
+=======
+		Port:         port,
+		RSSFeeds:     rssFeeds,
+		TemplatesDir: templatesDir,
+		StaticDir:    staticDir,
+		Context:      context.Background(),
+>>>>>>> 379b4927f2c96c6f8447f4ead23ca17288245fc1
 	}, nil
 }
 

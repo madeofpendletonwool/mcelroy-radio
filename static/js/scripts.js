@@ -1028,7 +1028,7 @@ class GlobalRadioPlayer {
 
         const audioUrl = data.audio_url;
         const timeOffset = data.time_offset || 0;
-        
+
         this.updateLoadingStatus(this.LoadingStates.LOADING_STREAM);
 
         console.log("RSS Audio URL:", audioUrl);
@@ -1505,9 +1505,12 @@ class GlobalRadioPlayer {
           this.updateMediaSessionMetadata(data);
 
           // Check if we need to load a new RSS URL for this episode
-          if (!this.audioPlayer.src.includes(data.id) || this.audioPlayer.src === "") {
+          if (
+            !this.audioPlayer.src.includes(data.id) ||
+            this.audioPlayer.src === ""
+          ) {
             console.log("Loading new episode RSS URL");
-            
+
             // Get the new episode's RSS URL
             fetch("/stream")
               .then((response) => response.json())
@@ -1521,7 +1524,9 @@ class GlobalRadioPlayer {
                   }
                 }
               })
-              .catch((err) => console.error("Failed to get new episode URL:", err));
+              .catch((err) =>
+                console.error("Failed to get new episode URL:", err),
+              );
           }
         }
 
