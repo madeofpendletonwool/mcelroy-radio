@@ -12,11 +12,17 @@ import (
 // Config holds the application configuration
 type Config struct {
 	Port               string
-	ContentDirectories []string
+	RSSFeeds     []RSSFeed
 	TemplatesDir       string
 	StaticDir          string
 	StationConfigDir   string
 	Context            context.Context
+}
+
+// RSSFeed represents an RSS feed configuration
+type RSSFeed struct {
+	Name string
+	URL  string
 }
 
 // Load returns a configuration object populated from environment variables
@@ -27,9 +33,10 @@ func Load() (*Config, error) {
 		port = "8080" // Default port
 	}
 
-	// Set up content directories
-	contentDirs := make([]string, 0)
+	// Set up RSS feeds
+	rssFeeds := make([]RSSFeed, 0)
 
+<<<<<<< HEAD
 	// Parse from environment or use auto-discovery
 	contentEnv := os.Getenv("CONTENT_DIRS")
 	if contentEnv != "" {
@@ -71,6 +78,29 @@ func Load() (*Config, error) {
 		log.Printf("Warning: No valid content directories found!")
 	} else {
 		log.Printf("Using %d valid content directories", len(validDirs))
+=======
+	// Parse from environment or use default
+	rssEnv := os.Getenv("RSS_FEEDS")
+	if rssEnv != "" {
+		// Parse format: "Name1:URL1,Name2:URL2,Name3:URL3"
+		feeds := strings.Split(rssEnv, ",")
+		for _, feed := range feeds {
+			parts := strings.SplitN(feed, ":", 2)
+			if len(parts) == 2 {
+				rssFeeds = append(rssFeeds, RSSFeed{
+					Name: strings.TrimSpace(parts[0]),
+					URL:  strings.TrimSpace(parts[1]),
+				})
+			}
+		}
+	} else {
+		// Default RSS feeds - these are example URLs, should be configured for actual McElroy feeds
+		rssFeeds = []RSSFeed{
+			{Name: "My Brother My Brother and Me", URL: "https://feeds.simplecast.com/wjQvV_54"},
+			{Name: "The Adventure Zone", URL: "https://feeds.simplecast.com/cYQVV__c"},
+			{Name: "Sawbones", URL: "https://feeds.simplecast.com/y1N13_qC"},
+		}
+>>>>>>> 379b492 (Stream via rss)
 	}
 
 	// Set template and static directories
@@ -84,12 +114,20 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
+<<<<<<< HEAD
 		Port:               port,
 		ContentDirectories: validDirs,
 		TemplatesDir:       templatesDir,
 		StaticDir:          staticDir,
 		StationConfigDir:   stationConfigDir,
 		Context:            context.Background(),
+=======
+		Port:         port,
+		RSSFeeds:     rssFeeds,
+		TemplatesDir: templatesDir,
+		StaticDir:    staticDir,
+		Context:      context.Background(),
+>>>>>>> 379b492 (Stream via rss)
 	}, nil
 }
 

@@ -7,181 +7,17 @@ import (
 	"io/ioutil"
 	"log"
 	"math/rand"
-	"os"
-	"path/filepath"
-	"runtime"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/madeofpendletonwool/mcelroy-radio/internal/config"
 	"github.com/madeofpendletonwool/mcelroy-radio/internal/models"
+	"github.com/madeofpendletonwool/mcelroy-radio/internal/rss"
 )
 
-// CachedEpisodeData represents the cached metadata for an episode
-type CachedEpisodeData struct {
-	FilePath    string    `json:"file_path"`
-	FileSize    int64     `json:"file_size"`
-	ModTime     time.Time `json:"mod_time"`
-	Title       string    `json:"title"`
-	ShowName    string    `json:"show_name"`
-	Artist      string    `json:"artist"`
-	Album       string    `json:"album"`
-	Genre       string    `json:"genre"`
-	Duration    float64   `json:"duration"`
-	ImagePath   string    `json:"image_path"`
-	PublishedAt time.Time `json:"published_at"`
-	CachedAt    time.Time `json:"cached_at"`
-}
-
-// MetadataCache manages the episode metadata cache
-type MetadataCache struct {
-	cachePath string
-	cache     map[string]*CachedEpisodeData
-	mutex     sync.RWMutex
-}
-
-// NewMetadataCache creates a new metadata cache
-func NewMetadataCache(cacheDir string) *MetadataCache {
-	cachePath := filepath.Join(cacheDir, "episode_metadata.json")
-
-	cache := &MetadataCache{
-		cachePath: cachePath,
-		cache:     make(map[string]*CachedEpisodeData),
-	}
-
-	// Load existing cache
-	cache.loadCache()
-
-	return cache
-}
-
-// loadCache loads the cache from disk
-func (mc *MetadataCache) loadCache() {
-	mc.mutex.Lock()
-	defer mc.mutex.Unlock()
-
-	if _, err := os.Stat(mc.cachePath); os.IsNotExist(err) {
-		log.Printf("No metadata cache found at %s, starting fresh", mc.cachePath)
-		return
-	}
-
-	data, err := ioutil.ReadFile(mc.cachePath)
-	if err != nil {
-		log.Printf("Error reading metadata cache: %v", err)
-		return
-	}
-
-	if err := json.Unmarshal(data, &mc.cache); err != nil {
-		log.Printf("Error parsing metadata cache: %v", err)
-		// Start fresh if cache is corrupted
-		mc.cache = make(map[string]*CachedEpisodeData)
-		return
-	}
-
-	log.Printf("Loaded metadata cache with %d entries", len(mc.cache))
-}
-
-// saveCache saves the cache to disk
-func (mc *MetadataCache) saveCache() error {
-	mc.mutex.RLock()
-	defer mc.mutex.RUnlock()
-
-	// Ensure cache directory exists
-	if err := os.MkdirAll(filepath.Dir(mc.cachePath), 0755); err != nil {
-		return fmt.Errorf("failed to create cache directory: %v", err)
-	}
-
-	data, err := json.MarshalIndent(mc.cache, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal cache: %v", err)
-	}
-
-	if err := ioutil.WriteFile(mc.cachePath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write cache file: %v", err)
-	}
-
-	return nil
-}
-
-// getCacheKey generates a unique key for a file
-func (mc *MetadataCache) getCacheKey(filePath string) string {
-	hash := md5.Sum([]byte(filePath))
-	return fmt.Sprintf("%x", hash)
-}
-
-// isFileCached checks if a file is cached and up-to-date
-func (mc *MetadataCache) isFileCached(filePath string, fileInfo os.FileInfo) bool {
-	mc.mutex.RLock()
-	defer mc.mutex.RUnlock()
-
-	key := mc.getCacheKey(filePath)
-	cached, exists := mc.cache[key]
-
-	if !exists {
-		return false
-	}
-
-	// Check if file has been modified since caching
-	if cached.FileSize != fileInfo.Size() || !cached.ModTime.Equal(fileInfo.ModTime()) {
-		return false
-	}
-
-	return true
-}
-
-// getCachedEpisode retrieves a cached episode
-func (mc *MetadataCache) getCachedEpisode(filePath string) *models.Episode {
-	mc.mutex.RLock()
-	defer mc.mutex.RUnlock()
-
-	key := mc.getCacheKey(filePath)
-	cached, exists := mc.cache[key]
-
-	if !exists {
-		return nil
-	}
-
-	return &models.Episode{
-		ID:          filePath,
-		Title:       cached.Title,
-		ShowName:    cached.ShowName,
-		Artist:      cached.Artist,
-		Album:       cached.Album,
-		Genre:       cached.Genre,
-		AudioPath:   filePath,
-		ImagePath:   cached.ImagePath,
-		Duration:    cached.Duration,
-		FileSize:    cached.FileSize,
-		PublishedAt: cached.PublishedAt,
-		RandomFact:  models.GetRandomFact(),
-	}
-}
-
-// cacheEpisode stores an episode in the cache
-func (mc *MetadataCache) cacheEpisode(episode *models.Episode, fileInfo os.FileInfo) {
-	mc.mutex.Lock()
-	defer mc.mutex.Unlock()
-
-	key := mc.getCacheKey(episode.AudioPath)
-	mc.cache[key] = &CachedEpisodeData{
-		FilePath:    episode.AudioPath,
-		FileSize:    fileInfo.Size(),
-		ModTime:     fileInfo.ModTime(),
-		Title:       episode.Title,
-		ShowName:    episode.ShowName,
-		Artist:      episode.Artist,
-		Album:       episode.Album,
-		Genre:       episode.Genre,
-		Duration:    episode.Duration,
-		ImagePath:   episode.ImagePath,
-		PublishedAt: episode.PublishedAt,
-		CachedAt:    time.Now(),
-	}
-}
-
-// FileStore manages audio file discovery and tracking with caching
+// FileStore manages episode discovery from RSS feeds and tracking
 type FileStore struct {
-	ContentDirs     []string
+	RSSFeeds        []config.RSSFeed
 	Episodes        []*models.Episode
 	CurrentEpisode  *models.Episode
 	RecentlyPlayed  []*models.Episode
@@ -189,11 +25,12 @@ type FileStore struct {
 	episodesMutex   sync.RWMutex
 	refreshInterval time.Duration
 	rng             *rand.Rand
-	metadataCache   *MetadataCache
+	rssParser       *rss.Parser
 }
 
-// NewFileStore creates a new file store with metadata caching
-func NewFileStore(contentDirs []string) (*FileStore, error) {
+// NewFileStore creates a new file store and starts RSS feed parsing
+func NewFileStore(rssFeeds []config.RSSFeed) (*FileStore, error) {
+	// Create a new random source with current time as seed
 	source := rand.NewSource(time.Now().UnixNano())
 	rng := rand.New(source)
 
@@ -202,90 +39,36 @@ func NewFileStore(contentDirs []string) (*FileStore, error) {
 	metadataCache := NewMetadataCache(cacheDir)
 
 	fs := &FileStore{
-		ContentDirs:     contentDirs,
+		RSSFeeds:        rssFeeds,
 		Episodes:        make([]*models.Episode, 0),
 		RecentlyPlayed:  make([]*models.Episode, 0),
 		PlayedEpisodes:  make(map[string]bool),
-		refreshInterval: 15 * time.Minute, // Increased since we have caching now
+		refreshInterval: 30 * time.Minute, // Check RSS feeds every 30 minutes
 		rng:             rng,
-		metadataCache:   metadataCache,
+		rssParser:       rss.New(),
 	}
 
-	// Initial scan
-	if err := fs.ScanContent(); err != nil {
+	// Initial RSS feed parsing
+	if err := fs.ParseRSSFeeds(); err != nil {
 		return nil, err
 	}
 
-	// Start background scanner
-	go fs.backgroundScanner()
+	// Start background RSS feed parser
+	go fs.backgroundRSSParser()
 
 	return fs, nil
 }
 
-// ScanContent scans directories with intelligent caching
-func (fs *FileStore) ScanContent() error {
-	log.Println("Starting cached content scan...")
-	startTime := time.Now()
+// ParseRSSFeeds parses all configured RSS feeds for episodes
+func (fs *FileStore) ParseRSSFeeds() error {
+	log.Println("Parsing RSS feeds for episodes...")
 
-	var allEpisodes []*models.Episode
-	var newFiles []FileJob
-	cacheHits := 0
-	totalFiles := 0
-
-	// First pass: check what's cached vs what needs scanning
-	for _, dir := range fs.ContentDirs {
-		showName := filepath.Base(dir)
-		log.Printf("Checking directory: %s", dir)
-
-		err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				log.Printf("Warning: Error accessing path %s: %v", path, err)
-				return nil
-			}
-
-			if info.IsDir() {
-				return nil
-			}
-
-			// Check if it's an audio file
-			ext := strings.ToLower(filepath.Ext(path))
-			audioExtensions := map[string]bool{
-				".mp3": true, ".m4a": true, ".ogg": true,
-				".wav": true, ".flac": true, ".aac": true,
-			}
-
-			if !audioExtensions[ext] {
-				return nil
-			}
-
-			totalFiles++
-
-			// Check if cached and up-to-date
-			if fs.metadataCache.isFileCached(path, info) {
-				if episode := fs.metadataCache.getCachedEpisode(path); episode != nil {
-					allEpisodes = append(allEpisodes, episode)
-					cacheHits++
-					return nil
-				}
-			}
-
-			// Not cached or needs updating
-			newFiles = append(newFiles, FileJob{
-				Path:     path,
-				ShowName: showName,
-				FileInfo: info,
-			})
-
-			return nil
-		})
-
-		if err != nil {
-			log.Printf("Error scanning directory %s: %v", dir, err)
-		}
+	episodes, err := fs.rssParser.ParseFeeds(fs.RSSFeeds)
+	if err != nil {
+		return err
 	}
 
-	log.Printf("Cache analysis: %d cached, %d need scanning, %d total files",
-		cacheHits, len(newFiles), totalFiles)
+	log.Printf("Found %d total episodes across all RSS feeds", len(episodes))
 
 	// Second pass: process uncached files
 	if len(newFiles) > 0 {
@@ -394,18 +177,18 @@ func (fs *FileStore) processUncachedFiles(jobs []FileJob) []*models.Episode {
 	return episodes
 }
 
-// backgroundScanner periodically checks for new content
-func (fs *FileStore) backgroundScanner() {
+// backgroundRSSParser periodically checks RSS feeds for new episodes
+func (fs *FileStore) backgroundRSSParser() {
 	ticker := time.NewTicker(fs.refreshInterval)
 	defer ticker.Stop()
 
-	log.Printf("Started background content scanner (checking every %v)", fs.refreshInterval)
+	log.Printf("Started background RSS feed parser (checking every %v)", fs.refreshInterval)
 
 	for {
 		<-ticker.C
-		log.Println("Running background content scan...")
-		if err := fs.ScanContent(); err != nil {
-			log.Printf("Error during background content scan: %v", err)
+		log.Println("Running background RSS feed parsing...")
+		if err := fs.ParseRSSFeeds(); err != nil {
+			log.Printf("Error during background RSS feed parsing: %v", err)
 		}
 	}
 }

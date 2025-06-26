@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -447,7 +446,7 @@ func parseRange(rangeHeader string, fileSize int64) (start, end int64, err error
 	return start, end, nil
 }
 
-// StreamAudio now takes a station parameter
+// StreamAudio redirects to the RSS audio URL with time offset for radio sync
 func (h *Handler) StreamAudio(w http.ResponseWriter, r *http.Request) {
 	// Get the requested station from query parameter
 	stationID := r.URL.Query().Get("station")
@@ -465,127 +464,54 @@ func (h *Handler) StreamAudio(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Open the file
-	file, err := os.Open(currentEpisode.AudioPath)
-	if err != nil {
-		log.Printf("Failed to open audio file: %v", err)
-		http.Error(w, "Audio file not found", http.StatusNotFound)
+	// Get the RSS audio URL (AudioPath now contains the RSS URL)
+	audioURL := currentEpisode.AudioPath
+	if audioURL == "" {
+		log.Printf("No audio URL available for episode: %s", currentEpisode.Title)
+		http.Error(w, "No audio URL available", http.StatusNotFound)
 		return
 	}
-	defer file.Close()
 
-	// Get file size
-	stat, err := file.Stat()
-	if err != nil {
-		log.Printf("Failed to stat audio file: %v", err)
-		http.Error(w, "Audio file error", http.StatusInternalServerError)
-		return
-	}
-	fileSize := stat.Size()
-
-	// Parse Range header
+	// Check if this is a "radio sync" request (no range header on first request)
+	// In this case, we want to provide time sync information to the client
 	rangeHeader := r.Header.Get("Range")
-	start, end, err := parseRange(rangeHeader, fileSize)
-	if err != nil {
-		log.Printf("Invalid range header: %v", err)
-		http.Error(w, "Invalid range", http.StatusRequestedRangeNotSatisfiable)
+	if rangeHeader == "" {
+		// Get server's current time position for radio sync
+		serverTimePosition := h.player.GetCurrentTimePosition()
+
+		// Return a JSON response with the audio URL and time offset
+		// The client will then make the request to the RSS URL
+		syncInfo := map[string]interface{}{
+			"audio_url": audioURL,
+			"time_offset": serverTimePosition,
+			"episode_id": currentEpisode.ID,
+			"title": currentEpisode.Title,
+			"show_name": currentEpisode.ShowName,
+			"duration": currentEpisode.Duration,
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
+		w.Header().Set("Expires", "0")
+
+		if err := json.NewEncoder(w).Encode(syncInfo); err != nil {
+			log.Printf("Error encoding sync info: %v", err)
+			http.Error(w, "Error encoding response", http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("Provided sync info for episode: %s (time offset: %.2fs)", currentEpisode.Title, serverTimePosition)
 		return
 	}
 
-	// Get station's current time position for sync
-	if rangeHeader == "" {
-		serverTimePosition := h.stationManager.GetCurrentTimePosition(stationID)
-		if serverTimePosition > 0 && currentEpisode.Duration > 0 {
-			// Estimate byte position based on time
-			estimatedBytePos := int64(float64(fileSize) * (serverTimePosition / currentEpisode.Duration))
-			estimatedBytePos = (estimatedBytePos / 1024) * 1024 // Align to 1KB boundary
+	// If there's a range header, this is likely a direct audio request
+	// We should redirect to the RSS URL and let the client handle the range request
+	log.Printf("Redirecting audio request to RSS URL: %s", audioURL)
 
-			if estimatedBytePos > 0 && estimatedBytePos < fileSize {
-				start = estimatedBytePos
-				log.Printf("Station %s sync: starting from byte %d (time %.2fs)", stationID, start, serverTimePosition)
-			}
-		}
-	}
-
-	// Set common headers
-	w.Header().Set("Content-Type", "audio/mpeg")
-	w.Header().Set("Accept-Ranges", "bytes")
-	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-	w.Header().Set("Pragma", "no-cache")
-	w.Header().Set("Expires", "0")
-
-	contentLength := end - start + 1
-
-	if rangeHeader != "" {
-		// Partial content response
-		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, fileSize))
-		w.Header().Set("Content-Length", strconv.FormatInt(contentLength, 10))
-		w.WriteHeader(http.StatusPartialContent)
-		log.Printf("Serving partial content for station %s: bytes %d-%d/%d", stationID, start, end, fileSize)
-	} else {
-		// Full content response (but potentially starting from middle)
-		w.Header().Set("Content-Length", strconv.FormatInt(contentLength, 10))
-		w.WriteHeader(http.StatusOK)
-		log.Printf("Serving content for station %s from byte %d, length %d", stationID, start, contentLength)
-	}
-
-	// Seek to start position
-	if start > 0 {
-		_, err = file.Seek(start, io.SeekStart)
-		if err != nil {
-			log.Printf("Failed to seek in file: %v", err)
-			return
-		}
-	}
-
-	// Create a limited reader to ensure we don't read past the end
-	limitedReader := io.LimitReader(file, contentLength)
-
-	// Stream the content
-	buffer := make([]byte, 32768) // 32KB buffer
-	written := int64(0)
-
-	for written < contentLength {
-		n, err := limitedReader.Read(buffer)
-		if err != nil && err != io.EOF {
-			log.Printf("Error reading file: %v", err)
-			return
-		}
-		if n == 0 {
-			break
-		}
-
-		bytesToWrite := int64(n)
-		if written+bytesToWrite > contentLength {
-			bytesToWrite = contentLength - written
-		}
-
-		_, writeErr := w.Write(buffer[:bytesToWrite])
-		if writeErr != nil {
-			log.Printf("Error writing to client: %v", writeErr)
-			return
-		}
-
-		// Flush immediately for streaming
-		if flusher, ok := w.(http.Flusher); ok {
-			flusher.Flush()
-		}
-
-		written += bytesToWrite
-
-		// Check if client disconnected
-		select {
-		case <-r.Context().Done():
-			log.Printf("Client disconnected during streaming")
-			return
-		default:
-		}
-
-		// Small delay to control streaming rate
-		time.Sleep(10 * time.Millisecond)
-	}
-
-	log.Printf("Successfully streamed %d bytes to client for station %s", written, stationID)
+	// Use a temporary redirect so the client makes the request to the RSS URL
+	// This ensures the download is tracked by the RSS host
+	http.Redirect(w, r, audioURL, http.StatusTemporaryRedirect)
 }
 
 // Update StationList to return all stations (no current station concept)

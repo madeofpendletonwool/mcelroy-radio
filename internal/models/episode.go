@@ -1,14 +1,7 @@
 package models
 
 import (
-	"crypto/md5"
-	"fmt"
 	"math/rand"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"regexp"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -31,216 +24,51 @@ type Episode struct {
 	FileSize    int64     `json:"file_size"`
 }
 
-// AudioMetadata holds the parsed metadata from audio files
-type AudioMetadata struct {
-	Title    string
-	Artist   string
-	Album    string
-	Genre    string
-	Date     string
-	Duration float64
-	FileSize int64
-	HasImage bool
-}
-
-// NewEpisodeFromFile creates a new Episode from a file path with metadata parsing
-func NewEpisodeFromFile(path string, showName string) *Episode {
-	// Extract basic info from filename
-	filename := filepath.Base(path)
-	ext := filepath.Ext(filename)
-	fallbackTitle := filename[0 : len(filename)-len(ext)]
-
-	// Parse metadata using ffprobe
-	metadata := parseAudioMetadata(path)
-
-	// Use metadata title if available, otherwise use filename
-	title := metadata.Title
-	if title == "" {
-		title = fallbackTitle
-	}
-
-	// Parse date from metadata or filename
-	publishedAt := parseDateFromMetadata(metadata.Date, filename)
-
-	// Determine show name from metadata or directory
-	finalShowName := showName
-	if metadata.Album != "" {
-		finalShowName = metadata.Album
-	}
-
-	// Extract and save album art if available
-	imagePath := extractAlbumArt(path, metadata.HasImage)
-
-	return &Episode{
-		ID:          path, // Using path as ID for now
-		Title:       title,
-		ShowName:    finalShowName,
-		Artist:      metadata.Artist,
-		Album:       metadata.Album,
-		Genre:       metadata.Genre,
-		AudioPath:   path,
-		ImagePath:   imagePath,
-		Duration:    metadata.Duration,
-		FileSize:    metadata.FileSize,
-		PublishedAt: publishedAt,
-		RandomFact:  GetRandomFact(),
-	}
-}
-
-// parseAudioMetadata uses ffprobe to extract metadata from audio files
-func parseAudioMetadata(filePath string) AudioMetadata {
-	metadata := AudioMetadata{}
-
-	// Get format metadata including streams info
-	cmd := exec.Command("ffprobe", "-v", "error", "-show_entries",
-		"format_tags:format=duration,size:stream", "-of", "default=noprint_wrappers=1", filePath)
-	output, err := cmd.Output()
-	if err != nil {
-		fmt.Printf("Error running ffprobe on %s: %v\n", filePath, err)
-		return metadata
-	}
-
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		if strings.HasPrefix(line, "TAG:title=") {
-			metadata.Title = strings.TrimPrefix(line, "TAG:title=")
-		} else if strings.HasPrefix(line, "TAG:artist=") {
-			metadata.Artist = strings.TrimPrefix(line, "TAG:artist=")
-		} else if strings.HasPrefix(line, "TAG:album=") {
-			metadata.Album = strings.TrimPrefix(line, "TAG:album=")
-		} else if strings.HasPrefix(line, "TAG:genre=") {
-			metadata.Genre = strings.TrimPrefix(line, "TAG:genre=")
-		} else if strings.HasPrefix(line, "TAG:date=") {
-			metadata.Date = strings.TrimPrefix(line, "TAG:date=")
-		} else if strings.HasPrefix(line, "duration=") {
-			if durationStr := strings.TrimPrefix(line, "duration="); durationStr != "" {
-				if duration, err := strconv.ParseFloat(durationStr, 64); err == nil {
-					metadata.Duration = duration
-				}
-			}
-		} else if strings.HasPrefix(line, "size=") {
-			if sizeStr := strings.TrimPrefix(line, "size="); sizeStr != "" {
-				if size, err := strconv.ParseInt(sizeStr, 10, 64); err == nil {
-					metadata.FileSize = size
-				}
-			}
-		} else if strings.Contains(line, "codec_name=") && strings.Contains(line, "jpg") ||
-			strings.Contains(line, "codec_name=") && strings.Contains(line, "png") {
-			// Found an image stream
-			metadata.HasImage = true
-		}
-	}
-
-	return metadata
-}
-
-// extractAlbumArt extracts album art from audio file and saves it to static directory
-func extractAlbumArt(audioPath string, hasImage bool) string {
-	if !hasImage {
-		return getDefaultImagePathForShow(audioPath)
-	}
-
-	// Create a unique filename based on the audio file path
-	hash := md5.Sum([]byte(audioPath))
-	imageFilename := fmt.Sprintf("cover_%x.jpg", hash)
-
-	// Ensure the covers directory exists
-	coversDir := filepath.Join("static", "img", "covers")
-	if err := os.MkdirAll(coversDir, 0755); err != nil {
-		fmt.Printf("Error creating covers directory: %v\n", err)
-		return getDefaultImagePathForShow(audioPath)
-	}
-
-	imagePath := filepath.Join(coversDir, imageFilename)
-
-	// Check if image already exists
-	if _, err := os.Stat(imagePath); err == nil {
-		return "/static/img/covers/" + imageFilename
-	}
-
-	// Extract album art using ffmpeg
-	cmd := exec.Command("ffmpeg", "-i", audioPath, "-an", "-vcodec", "copy", imagePath, "-y")
-	if err := cmd.Run(); err != nil {
-		fmt.Printf("Error extracting album art from %s: %v\n", audioPath, err)
-		return getDefaultImagePathForShow(audioPath)
-	}
-
-	// Verify the file was created and has content
-	if info, err := os.Stat(imagePath); err != nil || info.Size() == 0 {
-		// Clean up empty file and fall back to default
-		os.Remove(imagePath)
-		return getDefaultImagePathForShow(audioPath)
-	}
-
-	return "/static/img/covers/" + imageFilename
-}
-
-// parseDateFromMetadata tries to parse a date from metadata or filename
-func parseDateFromMetadata(dateStr, filename string) time.Time {
-	// Try to parse the metadata date first
-	if dateStr != "" {
-		// Handle various date formats
-		formats := []string{
-			"2006-01-02",
-			"0001-01-02", // Common in some metadata
-			"2006",
-			"01-02-2006",
-			"2006-01-02T15:04:05Z07:00",
-		}
-
-		for _, format := range formats {
-			if t, err := time.Parse(format, dateStr); err == nil {
-				// If year is 0001, it's probably invalid metadata
-				if t.Year() > 1900 {
-					return t
-				}
-			}
-		}
-	}
-
-	// Try to extract date from filename
-	// Look for patterns like "01-13-2025" or "2025-01-13"
-	dateRegex := regexp.MustCompile(`(\d{1,2}-\d{1,2}-\d{4})|(\d{4}-\d{1,2}-\d{1,2})`)
-	if match := dateRegex.FindString(filename); match != "" {
-		formats := []string{
-			"01-02-2006",
-			"1-2-2006",
-			"2006-01-02",
-			"2006-1-2",
-		}
-
-		for _, format := range formats {
-			if t, err := time.Parse(format, match); err == nil {
-				return t
-			}
-		}
-	}
-
-	// Default to current time if we can't parse anything
-	return time.Now()
-}
-
-// getDefaultImagePathForShow returns the appropriate default image path based on show name or path
-func getDefaultImagePathForShow(audioPath string) string {
-	// Extract show name from path or use existing logic
-	showNameLower := strings.ToLower(filepath.Base(filepath.Dir(audioPath)))
+// GetImagePathForShow returns the appropriate default image path based on show name
+func GetImagePathForShow(showName string) string {
+	showNameLower := strings.ToLower(showName)
 
 	if strings.Contains(showNameLower, "brother") || strings.Contains(showNameLower, "mbmbam") {
-		return "/static/img/mbmbam-cover.png"
+		return "/static/images/shows/mbmbam.jpg"
 	} else if strings.Contains(showNameLower, "adventure") || strings.Contains(showNameLower, "zone") {
-		return "/static/img/adventure-zone-cover.png"
+		return "/static/images/shows/adventure-zone.jpg"
 	} else if strings.Contains(showNameLower, "sawbones") {
-		return "/static/img/sawbones-cover.png"
+		return "/static/images/shows/sawbones.jpg"
 	} else if strings.Contains(showNameLower, "wonderful") {
-		return "/static/img/wonderful-cover.png"
+		return "/static/images/shows/wonderful.jpg"
+	} else if strings.Contains(showNameLower, "besties") {
+		return "/static/images/shows/besties.jpg"
+	} else if strings.Contains(showNameLower, "bunker") {
+		return "/static/images/shows/bunker-buddies.jpg"
+	} else if strings.Contains(showNameLower, "cool") && strings.Contains(showNameLower, "games") {
+		return "/static/images/shows/coolgames-inc.jpg"
+	} else if strings.Contains(showNameLower, "empty") {
+		return "/static/images/shows/empty-bowl.jpg"
+	} else if strings.Contains(showNameLower, "interrobang") {
+		return "/static/images/shows/interrobang.jpg"
+	} else if strings.Contains(showNameLower, "rewind") {
+		return "/static/images/shows/kind-rewind.jpg"
+	} else if strings.Contains(showNameLower, "positivitiny") {
+		return "/static/images/shows/positivitiny.jpg"
+	} else if strings.Contains(showNameLower, "quality") {
+		return "/static/images/shows/quality-control.jpg"
+	} else if strings.Contains(showNameLower, "rose") {
+		return "/static/images/shows/rose-buddies.jpg"
+	} else if strings.Contains(showNameLower, "doctor") {
+		return "/static/images/shows/run-doctor-who.jpg"
+	} else if strings.Contains(showNameLower, "shmanners") {
+		return "/static/images/shows/shmanners.jpg"
+	} else if strings.Contains(showNameLower, "buffering") {
+		return "/static/images/shows/still-buffering.jpg"
+	} else if strings.Contains(showNameLower, "nice") {
+		return "/static/images/shows/surprisingly-nice.jpg"
+	} else if strings.Contains(showNameLower, "blart") {
+		return "/static/images/shows/til-death-do-us-blart.jpg"
+	} else if strings.Contains(showNameLower, "trends") {
+		return "/static/images/shows/trends-like-these.jpg"
 	}
 
 	return "/static/img/default-cover.png"
-}
-
-// getImagePathForShow returns the appropriate image path based on show name (legacy function)
-func getImagePathForShow(showName string) string {
-	return getDefaultImagePathForShow(showName)
 }
 
 // Collection of silly facts about the McElroy brothers

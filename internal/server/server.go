@@ -15,8 +15,8 @@ import (
 
 // New creates a new HTTP server with configured routes
 func New(cfg *config.Config) (*http.Server, error) {
-	// Initialize file store
-	fileStore, err := storage.NewFileStore(cfg.ContentDirectories)
+	// Initialize file store with RSS feeds
+	fileStore, err := storage.NewFileStore(cfg.RSSFeeds)
 	if err != nil {
 		return nil, err
 	}

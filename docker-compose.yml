@@ -9,14 +9,7 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      # Mount the location of the audio files - uncomment and adjust paths as needed
-      - /home/user/mcelroy-radio/mbmbam:/opt/mcelroy-content/show1
-      - /home/user/mcelroy-radio/adventure-zone:/opt/mcelroy-content/show2
-      - /home/user/mcelroy-radio/sawbones:/opt/mcelroy-content/show3
-      # Mount cache directory for metadata persistence (speeds up subsequent scans dramatically)
-      - ./cache:/opt/mcelroy-content/cache
-      - ./covers:/app/static/img/covers
-
+      - RSS_FEEDS=My Brother My Brother and Me:https://feeds.simplecast.com/wjQvYtdl,The Adventure Zone:https://feeds.simplecast.com/cYQVc__c
       # Mount config directory for custom station configurations
       - ./config:/opt/mcelroy-content/config
     environment:
