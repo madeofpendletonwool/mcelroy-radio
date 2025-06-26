@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -161,13 +162,16 @@ func New(cfg *config.Config, fs *storage.FileStore) *Handler {
 	analyticsDir := filepath.Join(cfg.StationConfigDir, "analytics")
 	analyticsStore := storage.NewAnalyticsStore(analyticsDir)
 
+	// Create a dummy player for compatibility (stations handle their own progression now)
+	dummyPlayer, _ := player.New(fs)
+
 	return &Handler{
 		config:         cfg,
 		fileStore:      fs,
+		player:         dummyPlayer, // Keep for compatibility with any remaining references
 		stationManager: sm,
 		analyticsStore: analyticsStore,
 		templates:      templates,
-		// Remove player reference - we don't need it anymore
 	}
 }
 
@@ -476,18 +480,18 @@ func (h *Handler) StreamAudio(w http.ResponseWriter, r *http.Request) {
 	// In this case, we want to provide time sync information to the client
 	rangeHeader := r.Header.Get("Range")
 	if rangeHeader == "" {
-		// Get server's current time position for radio sync
-		serverTimePosition := h.player.GetCurrentTimePosition()
+		// Get server's current time position for radio sync using station manager
+		serverTimePosition := h.stationManager.GetCurrentTimePosition(stationID)
 
 		// Return a JSON response with the audio URL and time offset
 		// The client will then make the request to the RSS URL
 		syncInfo := map[string]interface{}{
-			"audio_url": audioURL,
+			"audio_url":   audioURL,
 			"time_offset": serverTimePosition,
-			"episode_id": currentEpisode.ID,
-			"title": currentEpisode.Title,
-			"show_name": currentEpisode.ShowName,
-			"duration": currentEpisode.Duration,
+			"episode_id":  currentEpisode.ID,
+			"title":       currentEpisode.Title,
+			"show_name":   currentEpisode.ShowName,
+			"duration":    currentEpisode.Duration,
 		}
 
 		w.Header().Set("Content-Type", "application/json")

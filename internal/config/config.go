@@ -36,49 +36,6 @@ func Load() (*Config, error) {
 	// Set up RSS feeds
 	rssFeeds := make([]RSSFeed, 0)
 
-<<<<<<< HEAD
-	// Parse from environment or use auto-discovery
-	contentEnv := os.Getenv("CONTENT_DIRS")
-	if contentEnv != "" {
-		// Use explicit environment variable
-		contentDirs = strings.Split(contentEnv, ",")
-		log.Printf("Using explicit CONTENT_DIRS: %v", contentDirs)
-	} else {
-		// Auto-discover all subdirectories in /opt/mcelroy-content/
-		baseContentDir := "/opt/mcelroy-content"
-		discoveredDirs, err := discoverContentDirectories(baseContentDir)
-		if err != nil {
-			log.Printf("Failed to auto-discover content directories: %v", err)
-			// Fallback to default directories
-			contentDirs = []string{
-				"/opt/mcelroy-content/show1",
-				"/opt/mcelroy-content/show2",
-				"/opt/mcelroy-content/show3",
-			}
-		} else {
-			contentDirs = discoveredDirs
-			log.Printf("Auto-discovered %d content directories: %v", len(contentDirs), contentDirs)
-		}
-	}
-
-	// Ensure directories exist and are accessible
-	validDirs := make([]string, 0)
-	for _, dir := range contentDirs {
-		if _, err := os.Stat(dir); os.IsNotExist(err) {
-			// Try to create it
-			if err := os.MkdirAll(dir, 0755); err != nil {
-				log.Printf("Warning: Could not create directory %s: %v", dir, err)
-				continue
-			}
-		}
-		validDirs = append(validDirs, dir)
-	}
-
-	if len(validDirs) == 0 {
-		log.Printf("Warning: No valid content directories found!")
-	} else {
-		log.Printf("Using %d valid content directories", len(validDirs))
-=======
 	// Parse from environment or use default
 	rssEnv := os.Getenv("RSS_FEEDS")
 	if rssEnv != "" {
@@ -100,7 +57,6 @@ func Load() (*Config, error) {
 			{Name: "The Adventure Zone", URL: "https://feeds.simplecast.com/cYQVV__c"},
 			{Name: "Sawbones", URL: "https://feeds.simplecast.com/y1N13_qC"},
 		}
->>>>>>> 379b492 (Stream via rss)
 	}
 
 	// Set template and static directories
@@ -114,20 +70,12 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-<<<<<<< HEAD
-		Port:               port,
-		ContentDirectories: validDirs,
-		TemplatesDir:       templatesDir,
-		StaticDir:          staticDir,
-		StationConfigDir:   stationConfigDir,
-		Context:            context.Background(),
-=======
-		Port:         port,
-		RSSFeeds:     rssFeeds,
-		TemplatesDir: templatesDir,
-		StaticDir:    staticDir,
-		Context:      context.Background(),
->>>>>>> 379b492 (Stream via rss)
+		Port:             port,
+		RSSFeeds:         rssFeeds,
+		TemplatesDir:     templatesDir,
+		StaticDir:        staticDir,
+		StationConfigDir: stationConfigDir,
+		Context:          context.Background(),
 	}, nil
 }
 

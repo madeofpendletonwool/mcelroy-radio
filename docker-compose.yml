@@ -9,14 +9,12 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - RSS_FEEDS=My Brother My Brother and Me:https://feeds.simplecast.com/wjQvYtdl,The Adventure Zone:https://feeds.simplecast.com/cYQVc__c
       # Mount config directory for custom station configurations
       - ./config:/opt/mcelroy-content/config
     environment:
       - PORT=8080
-      - ANALYTICS_PASSWORD="mcelroyradio"
-      # Optionally customize content directories
-      # - CONTENT_DIRS=/opt/mcelroy-content/show1,/opt/mcelroy-content/show2,/opt/mcelroy-content/show3
+      - RSS_FEEDS=My Brother My Brother and Me:https://feeds.simplecast.com/wjQvYtdl,The Adventure Zone:https://feeds.simplecast.com/cYQVc__c
+      - ANALYTICS_PASSWORD=mcelroyradio
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/"]
       interval: 30s
