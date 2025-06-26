@@ -475,19 +475,24 @@ class GlobalRadioPlayer {
 
     this.updateLoadingStatus(this.LoadingStates.FETCHING_POSITION);
 
-    // Get server position and initialize stream
-    fetch("/stream-position")
+    // Get stream info (now returns RSS URL and time offset)
+    fetch("/stream")
       .then((response) => response.json())
       .then((data) => {
-        const serverTimePosition = data.time_position || 0;
+        if (!data.audio_url) {
+          throw new Error("No audio URL provided");
+        }
+
+        const audioUrl = data.audio_url;
+        const timeOffset = data.time_offset || 0;
+        
         this.updateLoadingStatus(this.LoadingStates.LOADING_STREAM);
 
-        const streamUrl = `/stream?t=${Date.now()}`;
+        console.log("RSS Audio URL:", audioUrl);
+        console.log("Time offset:", timeOffset, "seconds");
 
-        console.log("Setting audio source:", streamUrl);
-        console.log("Server position:", serverTimePosition, "seconds");
-
-        this.audioPlayer.src = streamUrl;
+        // Set the RSS audio URL directly
+        this.audioPlayer.src = audioUrl;
 
         const handleLoadedMetadata = () => {
           this.audioPlayer.removeEventListener(
@@ -495,13 +500,13 @@ class GlobalRadioPlayer {
             handleLoadedMetadata,
           );
 
-          // Seek to server position
-          if (serverTimePosition > 0 && this.audioPlayer.duration) {
+          // Seek to server time position for radio sync
+          if (timeOffset > 0 && this.audioPlayer.duration) {
             const seekPosition = Math.min(
-              serverTimePosition,
+              timeOffset,
               this.audioPlayer.duration - 1,
             );
-            console.log("Seeking to position:", seekPosition, "seconds");
+            console.log("Seeking to sync position:", seekPosition, "seconds");
             this.audioPlayer.currentTime = seekPosition;
           }
 
@@ -510,10 +515,10 @@ class GlobalRadioPlayer {
           if (playPromise !== undefined) {
             playPromise
               .then(() => {
-                console.log("Autoplay started successfully");
+                console.log("Autoplay started successfully with RSS URL");
                 this.setStreamReady(true);
                 this.showNotification(
-                  "McElroy Radio is now playing!",
+                  "McElroy Radio is now playing from RSS!",
                   "success",
                 );
               })
@@ -545,7 +550,7 @@ class GlobalRadioPlayer {
         }
       })
       .catch((error) => {
-        console.error("Failed to get server position:", error);
+        console.error("Failed to get stream info:", error);
         this.updateLoadingStatus(this.LoadingStates.ERROR);
         setTimeout(() => {
           this.hideLoadingOverlay();
@@ -724,15 +729,24 @@ class GlobalRadioPlayer {
           this.updateUIWithEpisodeData(data);
           this.updateMediaSessionMetadata(data);
 
-          // Only update source if needed
-          if (!this.audioPlayer.src.includes("/stream")) {
-            const streamUrl = `/stream?t=${Date.now()}`;
-            this.audioPlayer.src = streamUrl;
-            this.audioPlayer.currentTime = 0;
+          // Check if we need to load a new RSS URL for this episode
+          if (!this.audioPlayer.src.includes(data.id) || this.audioPlayer.src === "") {
+            console.log("Loading new episode RSS URL");
+            
+            // Get the new episode's RSS URL
+            fetch("/stream")
+              .then((response) => response.json())
+              .then((streamData) => {
+                if (streamData.audio_url) {
+                  this.audioPlayer.src = streamData.audio_url;
+                  this.audioPlayer.currentTime = streamData.time_offset || 0;
 
-            if (this.isPlaying) {
-              this.audioPlayer.play().catch(console.error);
-            }
+                  if (this.isPlaying) {
+                    this.audioPlayer.play().catch(console.error);
+                  }
+                }
+              })
+              .catch((err) => console.error("Failed to get new episode URL:", err));
           }
         } else if (data.id === this.currentEpisodeId) {
           // Same episode - sync position if significantly off

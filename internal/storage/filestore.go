@@ -3,18 +3,17 @@ package storage
 import (
 	"log"
 	"math/rand"
-	"os"
-	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
+	"github.com/madeofpendletonwool/mcelroy-radio/internal/config"
 	"github.com/madeofpendletonwool/mcelroy-radio/internal/models"
+	"github.com/madeofpendletonwool/mcelroy-radio/internal/rss"
 )
 
-// FileStore manages audio file discovery and tracking
+// FileStore manages episode discovery from RSS feeds and tracking
 type FileStore struct {
-	ContentDirs     []string
+	RSSFeeds        []config.RSSFeed
 	Episodes        []*models.Episode
 	CurrentEpisode  *models.Episode
 	RecentlyPlayed  []*models.Episode
@@ -22,75 +21,46 @@ type FileStore struct {
 	episodesMutex   sync.RWMutex
 	refreshInterval time.Duration
 	rng             *rand.Rand
+	rssParser       *rss.Parser
 }
 
-// NewFileStore creates a new file store and starts content discovery
-func NewFileStore(contentDirs []string) (*FileStore, error) {
+// NewFileStore creates a new file store and starts RSS feed parsing
+func NewFileStore(rssFeeds []config.RSSFeed) (*FileStore, error) {
 	// Create a new random source with current time as seed
 	source := rand.NewSource(time.Now().UnixNano())
 	rng := rand.New(source)
 
 	fs := &FileStore{
-		ContentDirs:     contentDirs,
+		RSSFeeds:        rssFeeds,
 		Episodes:        make([]*models.Episode, 0),
 		RecentlyPlayed:  make([]*models.Episode, 0),
 		PlayedEpisodes:  make(map[string]bool),
-		refreshInterval: 5 * time.Minute,
+		refreshInterval: 30 * time.Minute, // Check RSS feeds every 30 minutes
 		rng:             rng,
+		rssParser:       rss.New(),
 	}
 
-	// Initial scan
-	if err := fs.ScanContent(); err != nil {
+	// Initial RSS feed parsing
+	if err := fs.ParseRSSFeeds(); err != nil {
 		return nil, err
 	}
 
-	// Start background scanner
-	go fs.backgroundScanner()
+	// Start background RSS feed parser
+	go fs.backgroundRSSParser()
 
 	return fs, nil
 }
 
-// ScanContent scans the content directories for audio files
-func (fs *FileStore) ScanContent() error {
-	log.Println("Scanning content directories for audio files...")
+// ParseRSSFeeds parses all configured RSS feeds for episodes
+func (fs *FileStore) ParseRSSFeeds() error {
+	log.Println("Parsing RSS feeds for episodes...")
 
-	var episodes []*models.Episode
-	episodeCount := 0
-
-	for _, dir := range fs.ContentDirs {
-		showName := filepath.Base(dir)
-		log.Printf("Scanning directory: %s (show: %s)", dir, showName)
-
-		err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				log.Printf("Error accessing path %s: %v", path, err)
-				return err
-			}
-
-			// Skip directories
-			if info.IsDir() {
-				return nil
-			}
-
-			// Check if file is an audio file
-			ext := strings.ToLower(filepath.Ext(path))
-			if ext == ".mp3" || ext == ".m4a" || ext == ".ogg" || ext == ".wav" {
-				episode := models.NewEpisodeFromFile(path, showName)
-				episodes = append(episodes, episode)
-				episodeCount++
-				log.Printf("Found episode: %s", episode.Title)
-			}
-
-			return nil
-		})
-
-		if err != nil {
-			log.Printf("Error scanning directory %s: %v", dir, err)
-			return err
-		}
+	episodes, err := fs.rssParser.ParseFeeds(fs.RSSFeeds)
+	if err != nil {
+		return err
 	}
 
-	log.Printf("Found %d total episodes across all directories", episodeCount)
+	log.Printf("Found %d total episodes across all RSS feeds", len(episodes))
 
 	// Update episodes with lock
 	fs.episodesMutex.Lock()
@@ -143,18 +113,18 @@ func (fs *FileStore) findNewEpisodes(newEpisodes []*models.Episode) []*models.Ep
 	return newlyFound
 }
 
-// backgroundScanner periodically checks for new content
-func (fs *FileStore) backgroundScanner() {
+// backgroundRSSParser periodically checks RSS feeds for new episodes
+func (fs *FileStore) backgroundRSSParser() {
 	ticker := time.NewTicker(fs.refreshInterval)
 	defer ticker.Stop()
 
-	log.Printf("Started background content scanner (checking every %v)", fs.refreshInterval)
+	log.Printf("Started background RSS feed parser (checking every %v)", fs.refreshInterval)
 
 	for {
 		<-ticker.C
-		log.Println("Running background content scan...")
-		if err := fs.ScanContent(); err != nil {
-			log.Printf("Error during background content scan: %v", err)
+		log.Println("Running background RSS feed parsing...")
+		if err := fs.ParseRSSFeeds(); err != nil {
+			log.Printf("Error during background RSS feed parsing: %v", err)
 		}
 	}
 }

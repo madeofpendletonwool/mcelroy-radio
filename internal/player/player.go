@@ -77,9 +77,9 @@ func (p *RadioPlayer) checkEpisodeProgress() {
 	}
 
 	// Update current position based on elapsed time
-	// Approximate bytes per second for MP3 (128kbps ≈ 16KB/s)
-	bytesPerSecond := int64(16000)
-	p.currentPosition = int64(playingTime * float64(bytesPerSecond))
+	// Since we're now using RSS URLs, position tracking is handled by the client
+	// We'll track time-based position instead of bytes
+	p.currentPosition = int64(playingTime)
 }
 
 // GetCurrentPosition returns the current playback position in bytes (estimated)

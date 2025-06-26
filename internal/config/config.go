@@ -9,11 +9,17 @@ import (
 
 // Config holds the application configuration
 type Config struct {
-	Port               string
-	ContentDirectories []string
-	TemplatesDir       string
-	StaticDir          string
-	Context            context.Context
+	Port         string
+	RSSFeeds     []RSSFeed
+	TemplatesDir string
+	StaticDir    string
+	Context      context.Context
+}
+
+// RSSFeed represents an RSS feed configuration
+type RSSFeed struct {
+	Name string
+	URL  string
 }
 
 // Load returns a configuration object populated from environment variables
@@ -24,29 +30,29 @@ func Load() (*Config, error) {
 		port = "8080" // Default port
 	}
 
-	// Set up content directories
-	contentDirs := make([]string, 0)
+	// Set up RSS feeds
+	rssFeeds := make([]RSSFeed, 0)
 
 	// Parse from environment or use default
-	contentEnv := os.Getenv("CONTENT_DIRS")
-	if contentEnv != "" {
-		contentDirs = strings.Split(contentEnv, ",")
-	} else {
-		// Default content directories
-		contentDirs = []string{
-			"/opt/mcelroy-content/show1",
-			"/opt/mcelroy-content/show2",
-			"/opt/mcelroy-content/show3",
-		}
-	}
-
-	// Ensure directories exist and are accessible
-	for _, dir := range contentDirs {
-		if _, err := os.Stat(dir); os.IsNotExist(err) {
-			// If directory doesn't exist, try to create it
-			if err := os.MkdirAll(dir, 0755); err != nil {
-				return nil, err
+	rssEnv := os.Getenv("RSS_FEEDS")
+	if rssEnv != "" {
+		// Parse format: "Name1:URL1,Name2:URL2,Name3:URL3"
+		feeds := strings.Split(rssEnv, ",")
+		for _, feed := range feeds {
+			parts := strings.SplitN(feed, ":", 2)
+			if len(parts) == 2 {
+				rssFeeds = append(rssFeeds, RSSFeed{
+					Name: strings.TrimSpace(parts[0]),
+					URL:  strings.TrimSpace(parts[1]),
+				})
 			}
+		}
+	} else {
+		// Default RSS feeds - these are example URLs, should be configured for actual McElroy feeds
+		rssFeeds = []RSSFeed{
+			{Name: "My Brother My Brother and Me", URL: "https://feeds.simplecast.com/wjQvV_54"},
+			{Name: "The Adventure Zone", URL: "https://feeds.simplecast.com/cYQVV__c"},
+			{Name: "Sawbones", URL: "https://feeds.simplecast.com/y1N13_qC"},
 		}
 	}
 
@@ -55,10 +61,10 @@ func Load() (*Config, error) {
 	staticDir := filepath.Join(".", "static")
 
 	return &Config{
-		Port:               port,
-		ContentDirectories: contentDirs,
-		TemplatesDir:       templatesDir,
-		StaticDir:          staticDir,
-		Context:            context.Background(),
+		Port:         port,
+		RSSFeeds:     rssFeeds,
+		TemplatesDir: templatesDir,
+		StaticDir:    staticDir,
+		Context:      context.Background(),
 	}, nil
 }

@@ -8,15 +8,10 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
-    volumes:
-      # Mount the location of the audio files - uncomment and adjust paths as needed
-      - /home/collinp/Documents/github/mcelroy-radio/mbmbam:/opt/mcelroy-content/show1
-      - /home/collinp/Documents/github/mcelroy-radio/adventure-zone:/opt/mcelroy-content/show2
-      - /home/collinp/Documents/github/mcelroy-radio/sawbones:/opt/mcelroy-content/show3
     environment:
       - PORT=8080
-      # Optionally customize content directories
-      # - CONTENT_DIRS=/opt/mcelroy-content/show1,/opt/mcelroy-content/show2,/opt/mcelroy-content/show3
+      # Configure RSS feeds - replace with actual RSS feed URLs
+      - RSS_FEEDS=My Brother My Brother and Me:https://feeds.simplecast.com/wjQvYtdl,The Adventure Zone:https://feeds.simplecast.com/cYQVc__c
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/"]
       interval: 30s
