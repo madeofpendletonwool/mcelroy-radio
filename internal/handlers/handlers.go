@@ -937,14 +937,14 @@ func (h *Handler) StreamEpisode(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-		w.Header().Set("Pragma", "no-cache")
-		w.Header().Set("Expires", "0")
+		bytesToWrite := int64(n)
+		if written+bytesToWrite > contentLength {
+			bytesToWrite = contentLength - written
+		}
 
-		if err := json.NewEncoder(w).Encode(syncInfo); err != nil {
-			log.Printf("Error encoding sync info: %v", err)
-			http.Error(w, "Error encoding response", http.StatusInternalServerError)
+		_, writeErr := w.Write(buffer[:bytesToWrite])
+		if writeErr != nil {
+			log.Printf("Error writing to client: %v", writeErr)
 			return
 		}
 
