@@ -487,6 +487,9 @@ class GlobalRadioPlayer {
     // About page functionality
     this.setupAboutPageFunctionality();
 
+    // Full-screen player functionality
+    this.setupFullScreenPlayer();
+
     // NEW: Bind episode play buttons
     if (document.querySelectorAll(".btn-play").length > 0) {
       bindDirectoryPlayButtons();
@@ -690,6 +693,16 @@ class GlobalRadioPlayer {
         window.aboutPageManager.init();
       }
     }, 100);
+  }
+
+  setupFullScreenPlayer() {
+    console.log('📱 Setting up full-screen player...');
+    
+    // Initialize full-screen player if not already done
+    if (!window.fullScreenPlayer) {
+      window.fullScreenPlayer = new FullScreenPlayer(this);
+      console.log('📱 Full-screen player created and linked to global player');
+    }
   }
 
   initBasicAnalytics() {
@@ -1707,11 +1720,17 @@ class GlobalRadioPlayer {
 
   updateMediaSessionPosition() {
     if ("mediaSession" in navigator && this.audioPlayer) {
-      navigator.mediaSession.setPositionState({
-        duration: this.audioPlayer.duration || 0,
-        playbackRate: this.audioPlayer.playbackRate || 1,
-        position: this.audioPlayer.currentTime || 0,
-      });
+      const duration = this.audioPlayer.duration || 0;
+      const currentTime = this.audioPlayer.currentTime || 0;
+      
+      // Only set position if we have valid duration and current time is not greater than duration
+      if (duration > 0 && currentTime <= duration) {
+        navigator.mediaSession.setPositionState({
+          duration: duration,
+          playbackRate: this.audioPlayer.playbackRate || 1,
+          position: currentTime,
+        });
+      }
     }
   }
 
@@ -4344,6 +4363,695 @@ class AboutPageManager {
 // Initialize about page manager globally
 window.aboutPageManager = new AboutPageManager();
 
+// Full-Screen Player Manager
+class FullScreenPlayer {
+  constructor(globalRadioPlayer) {
+    this.globalRadioPlayer = globalRadioPlayer;
+    this.isVisible = false;
+    this.isLoading = false;
+    this.currentEpisodeId = null;
+    this.episodeData = null;
+    this.touchStartY = 0;
+    this.touchStartTime = 0;
+    this.swipeThreshold = 50;
+    this.velocityThreshold = 0.5;
+    this.autoShowBlocked = true; // Prevent auto-showing on init
+    
+    this.elements = {};
+    this.init();
+    
+    // Allow manual showing after a delay
+    setTimeout(() => {
+      this.autoShowBlocked = false;
+    }, 2000);
+  }
+
+  init() {
+    this.cacheElements();
+    this.setupEventListeners();
+    console.log('📱 Full-screen player initialized');
+  }
+
+  cacheElements() {
+    // Main container and backdrop
+    this.elements.container = document.getElementById('fullscreen-player');
+    this.elements.backdrop = document.getElementById('fullscreen-backdrop');
+    
+    // Ensure player starts hidden with aggressive styling
+    if (this.elements.container) {
+      this.elements.container.style.cssText = `
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 100vh !important;
+        z-index: 9999 !important;
+        transform: translateY(100%) !important;
+        visibility: hidden !important;
+        display: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      `;
+      console.log('📱 Player forcibly hidden with inline styles');
+    }
+    
+    // Header elements
+    this.elements.closeBtn = document.getElementById('fullscreen-close-btn');
+    
+    // Artwork and loading
+    this.elements.episodeCover = document.getElementById('fullscreen-episode-cover');
+    this.elements.loadingSpinner = document.getElementById('fullscreen-loading-spinner');
+    this.elements.artworkOverlay = document.querySelector('.fullscreen-artwork-overlay');
+    
+    // Episode info
+    this.elements.episodeTitle = document.getElementById('fullscreen-episode-title');
+    this.elements.showName = document.getElementById('fullscreen-show-name');
+    this.elements.episodeDate = document.getElementById('fullscreen-episode-date');
+    this.elements.episodeDuration = document.getElementById('fullscreen-episode-duration');
+    this.elements.episodeArtist = document.getElementById('fullscreen-episode-artist');
+    this.elements.episodeDescription = document.getElementById('fullscreen-episode-description');
+    this.elements.randomFact = document.getElementById('fullscreen-random-fact');
+    
+    // Description toggle
+    this.elements.descriptionToggle = document.getElementById('fullscreen-description-toggle');
+    this.elements.description = document.querySelector('.fullscreen-description');
+    
+    // Progress and time
+    this.elements.progressBar = document.getElementById('fullscreen-progress-bar');
+    this.elements.progress = document.getElementById('fullscreen-progress');
+    this.elements.currentTime = document.getElementById('fullscreen-current-time');
+    this.elements.duration = document.getElementById('fullscreen-duration');
+    
+    // Controls
+    this.elements.playBtn = document.getElementById('fullscreen-play-btn');
+    this.elements.rewindBtn = document.getElementById('fullscreen-rewind-btn');
+    this.elements.volumeBtn = document.getElementById('fullscreen-volume-btn');
+    this.elements.volumeSection = document.getElementById('fullscreen-volume-section');
+    this.elements.volumeSlider = document.getElementById('fullscreen-volume-slider');
+  }
+
+  setupEventListeners() {
+    // Close button
+    if (this.elements.closeBtn) {
+      this.elements.closeBtn.addEventListener('click', () => this.hide());
+    }
+
+    // Backdrop click to close
+    if (this.elements.backdrop) {
+      this.elements.backdrop.addEventListener('click', () => this.hide());
+    }
+
+    // Player bar click to open (excluding control buttons)
+    const playerBar = document.getElementById('global-player-bar');
+    if (playerBar) {
+      playerBar.addEventListener('click', (e) => {
+        // Don't open if clicking on control buttons
+        if (e.target.closest('.control-btn, .volume-btn, .volume-slider, .player-controls, .volume-controls')) {
+          return;
+        }
+        this.show();
+      });
+
+      // Add swipe-up gesture to player bar
+      let playerBarTouchStartY = 0;
+      let playerBarTouchStartTime = 0;
+
+      playerBar.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 1) {
+          playerBarTouchStartY = e.touches[0].clientY;
+          playerBarTouchStartTime = Date.now();
+        }
+      });
+
+      playerBar.addEventListener('touchend', (e) => {
+        if (e.changedTouches.length === 1) {
+          const touchEndY = e.changedTouches[0].clientY;
+          const touchEndTime = Date.now();
+          const deltaY = touchEndY - playerBarTouchStartY;
+          const deltaTime = touchEndTime - playerBarTouchStartTime;
+          const velocity = Math.abs(deltaY) / deltaTime;
+
+          // Check for upward swipe (negative deltaY)
+          if (deltaY < -30 && velocity > 0.3) {
+            // Don't open if touching control buttons
+            if (!e.target.closest('.control-btn, .volume-btn, .volume-slider, .player-controls, .volume-controls')) {
+              e.preventDefault();
+              this.show();
+            }
+          }
+        }
+      });
+    }
+
+    // Touch/swipe gestures
+    if (this.elements.container) {
+      this.elements.container.addEventListener('touchstart', (e) => this.handleTouchStart(e));
+      this.elements.container.addEventListener('touchmove', (e) => this.handleTouchMove(e));
+      this.elements.container.addEventListener('touchend', (e) => this.handleTouchEnd(e));
+    }
+
+    // Description toggle
+    if (this.elements.descriptionToggle) {
+      this.elements.descriptionToggle.addEventListener('click', () => this.toggleDescription());
+    }
+
+    // Controls
+    if (this.elements.playBtn) {
+      this.elements.playBtn.addEventListener('click', () => {
+        if (this.globalRadioPlayer) {
+          this.globalRadioPlayer.togglePlay();
+        }
+      });
+    }
+
+    if (this.elements.rewindBtn) {
+      this.elements.rewindBtn.addEventListener('click', () => {
+        if (this.globalRadioPlayer) {
+          this.globalRadioPlayer.rewind();
+        }
+      });
+    }
+
+    if (this.elements.volumeBtn) {
+      this.elements.volumeBtn.addEventListener('click', () => this.toggleVolumeSection());
+    }
+
+    if (this.elements.volumeSlider) {
+      this.elements.volumeSlider.addEventListener('input', (e) => {
+        if (this.globalRadioPlayer) {
+          const volume = e.target.value / 100;
+          this.globalRadioPlayer.setVolume(volume);
+        }
+      });
+    }
+
+    // Progress bar seeking
+    if (this.elements.progressBar) {
+      this.elements.progressBar.addEventListener('click', (e) => this.handleProgressClick(e));
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      if (this.isVisible) {
+        switch (e.key) {
+          case 'Escape':
+            this.hide();
+            break;
+          case ' ':
+            e.preventDefault();
+            if (this.globalRadioPlayer) {
+              this.globalRadioPlayer.togglePlay();
+            }
+            break;
+        }
+      }
+    });
+  }
+
+  async show() {
+    if (this.isVisible || this.autoShowBlocked) {
+      if (this.autoShowBlocked) {
+        console.log('📱 Show blocked - auto-show prevention active');
+      }
+      return;
+    }
+    
+    console.log('📱 Opening full-screen player');
+    console.trace('📱 Show called from:'); // Add stack trace to see what's calling this
+    this.isVisible = true;
+    
+    console.log('📱 Container element:', this.elements.container);
+    console.log('📱 Container current styles:', this.elements.container.style.cssText);
+    
+    // Show the backdrop and container
+    if (this.elements.backdrop) {
+      this.elements.backdrop.classList.add('active');
+    }
+    
+    if (this.elements.container) {
+      this.elements.container.classList.add('active');
+      
+      // Get the computed background color
+      const computedStyle = getComputedStyle(document.documentElement);
+      const bgColor = computedStyle.getPropertyValue('--background-color') || '#0f172a';
+      
+      // Clear all existing styles first
+      this.elements.container.style.cssText = '';
+      
+      // Set new styles for showing
+      this.elements.container.style.cssText = `
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 100vh !important;
+        z-index: 9999 !important;
+        visibility: visible !important;
+        display: flex !important;
+        flex-direction: column !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: ${bgColor} !important;
+        overflow: hidden !important;
+        transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) !important;
+        transform: translateY(100%) !important;
+      `;
+      
+      console.log('📱 After setting show styles:', this.elements.container.style.cssText);
+      
+      // Small delay to ensure the element is rendered, then animate in
+      setTimeout(() => {
+        console.log('📱 Animating in...');
+        this.elements.container.style.setProperty('transform', 'translateY(0)', 'important');
+        console.log('📱 Transform set to:', this.elements.container.style.transform);
+      }, 50);
+    }
+    
+    // Load current episode data
+    await this.loadCurrentEpisode();
+    
+    // Sync with current playback state
+    this.syncWithGlobalPlayer();
+    
+    // Start progress updates
+    this.startProgressUpdates();
+  }
+
+  hide() {
+    if (!this.isVisible) return;
+    
+    console.log('📱 Closing full-screen player');
+    this.isVisible = false;
+    
+    // Hide the backdrop and container
+    if (this.elements.backdrop) {
+      this.elements.backdrop.classList.remove('active');
+    }
+    if (this.elements.container) {
+      this.elements.container.classList.remove('active');
+      
+      // Animate out
+      this.elements.container.style.setProperty('transform', 'translateY(100%)', 'important');
+      
+      // Hide after animation completes
+      setTimeout(() => {
+        if (!this.isVisible) { // Only hide if we're still supposed to be hidden
+          this.elements.container.style.setProperty('display', 'none', 'important');
+          this.elements.container.style.setProperty('visibility', 'hidden', 'important');
+        }
+      }, 400);
+    }
+    
+    // Stop progress updates
+    this.stopProgressUpdates();
+    
+    // Hide volume section
+    if (this.elements.volumeSection) {
+      this.elements.volumeSection.classList.remove('visible');
+    }
+  }
+
+  async loadCurrentEpisode() {
+    if (!this.globalRadioPlayer) return;
+    
+    this.showLoading(true);
+    
+    try {
+      // Get current episode ID from global player
+      const currentEpisodeId = this.globalRadioPlayer.currentEpisodeId;
+      
+      if (!currentEpisodeId) {
+        console.log('📱 No current episode ID, using basic info');
+        this.loadBasicEpisodeInfo();
+        return;
+      }
+      
+      // Fetch detailed episode data
+      console.log('📱 Fetching episode details for:', currentEpisodeId);
+      const response = await fetch(`/episode-details?id=${encodeURIComponent(currentEpisodeId)}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
+      const episodeData = await response.json();
+      this.episodeData = episodeData;
+      this.currentEpisodeId = currentEpisodeId;
+      
+      console.log('📱 Loaded episode details:', episodeData);
+      this.updateEpisodeDisplay(episodeData);
+      
+    } catch (error) {
+      console.error('📱 Failed to load episode details:', error);
+      this.loadBasicEpisodeInfo();
+    } finally {
+      this.showLoading(false);
+    }
+  }
+
+  loadBasicEpisodeInfo() {
+    // Fallback to basic info from global player
+    const playerTitle = document.getElementById('player-episode-title');
+    const playerShowName = document.getElementById('player-show-name');
+    const playerCover = document.getElementById('player-episode-cover');
+    
+    if (this.elements.episodeTitle && playerTitle) {
+      this.elements.episodeTitle.textContent = playerTitle.textContent || 'McElroy Radio';
+    }
+    
+    if (this.elements.showName && playerShowName) {
+      this.elements.showName.textContent = playerShowName.textContent || 'Where the goofs never end!';
+    }
+    
+    if (this.elements.episodeCover && playerCover) {
+      this.elements.episodeCover.src = playerCover.src || '/static/img/default-cover.png';
+      
+      // Force image dimensions even for fallback
+      this.elements.episodeCover.style.cssText = `
+        width: 300px !important;
+        height: 300px !important;
+        min-width: 300px !important;
+        min-height: 300px !important;
+        max-width: 300px !important;
+        max-height: 300px !important;
+        object-fit: cover !important;
+        display: block !important;
+        position: relative !important;
+      `;
+    }
+    
+    // Set default values for missing data
+    if (this.elements.episodeDate) {
+      this.elements.episodeDate.textContent = 'Date unavailable';
+    }
+    
+    if (this.elements.episodeDuration) {
+      this.elements.episodeDuration.textContent = 'Duration unknown';
+    }
+    
+    if (this.elements.episodeArtist) {
+      this.elements.episodeArtist.textContent = 'The McElroy Brothers';
+    }
+    
+    if (this.elements.episodeDescription) {
+      this.elements.episodeDescription.innerHTML = '<p>Episode details are loading...</p>';
+      // Ensure description starts collapsed
+      this.elements.episodeDescription.classList.remove('expanded');
+      if (this.elements.descriptionToggle) {
+        this.elements.descriptionToggle.classList.remove('expanded');
+        const toggleText = this.elements.descriptionToggle.querySelector('.toggle-text');
+        if (toggleText) {
+          toggleText.textContent = 'Show More';
+        }
+      }
+    }
+    
+    if (this.elements.randomFact) {
+      this.elements.randomFact.textContent = 'The McElroys once solved world peace in a dream but forgot to write it down.';
+    }
+  }
+
+  updateEpisodeDisplay(episodeData) {
+    // Update title and show name
+    if (this.elements.episodeTitle) {
+      this.elements.episodeTitle.textContent = episodeData.title || 'Unknown Episode';
+    }
+    
+    if (this.elements.showName) {
+      this.elements.showName.textContent = episodeData.show_name || 'Unknown Show';
+    }
+    
+    // Update artwork
+    if (this.elements.episodeCover && episodeData.image_path) {
+      this.elements.episodeCover.src = episodeData.image_path;
+      this.elements.episodeCover.alt = `${episodeData.show_name || 'Episode'} Cover Art`;
+      
+      // Force image dimensions
+      this.elements.episodeCover.style.cssText = `
+        width: 300px !important;
+        height: 300px !important;
+        min-width: 300px !important;
+        min-height: 300px !important;
+        max-width: 300px !important;
+        max-height: 300px !important;
+        object-fit: cover !important;
+        display: block !important;
+        position: relative !important;
+      `;
+    }
+    
+    // Update metadata
+    if (this.elements.episodeDate && episodeData.published_at) {
+      const date = new Date(episodeData.published_at);
+      this.elements.episodeDate.textContent = date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+    }
+    
+    if (this.elements.episodeDuration && episodeData.duration) {
+      this.elements.episodeDuration.textContent = this.formatDuration(episodeData.duration);
+    }
+    
+    if (this.elements.episodeArtist) {
+      this.elements.episodeArtist.textContent = episodeData.artist || 'The McElroy Brothers';
+    }
+    
+    // Update description
+    if (this.elements.episodeDescription && episodeData.description) {
+      // Clean up HTML and format nicely
+      const cleanDescription = this.formatDescription(episodeData.description);
+      this.elements.episodeDescription.innerHTML = cleanDescription;
+      
+      // Ensure description starts collapsed
+      this.elements.episodeDescription.classList.remove('expanded');
+      if (this.elements.descriptionToggle) {
+        this.elements.descriptionToggle.classList.remove('expanded');
+        const toggleText = this.elements.descriptionToggle.querySelector('.toggle-text');
+        if (toggleText) {
+          toggleText.textContent = 'Show More';
+        }
+      }
+    }
+    
+    // Update random fact
+    if (this.elements.randomFact && episodeData.random_fact) {
+      this.elements.randomFact.textContent = episodeData.random_fact;
+    }
+  }
+
+  formatDescription(description) {
+    if (!description) return '<p>No description available.</p>';
+    
+    // Remove HTML tags and clean up
+    const cleanText = description
+      .replace(/<[^>]*>/g, '') // Remove HTML tags
+      .replace(/&nbsp;/g, ' ') // Replace &nbsp; with spaces
+      .replace(/&amp;/g, '&') // Replace &amp; with &
+      .replace(/&lt;/g, '<') // Replace &lt; with <
+      .replace(/&gt;/g, '>') // Replace &gt; with >
+      .trim();
+    
+    // Split into paragraphs and wrap in <p> tags
+    const paragraphs = cleanText
+      .split(/\n\s*\n/) // Split on double line breaks
+      .filter(p => p.trim().length > 0) // Remove empty paragraphs
+      .map(p => `<p>${p.trim()}</p>`) // Wrap in <p> tags
+      .join('');
+    
+    return paragraphs || '<p>No description available.</p>';
+  }
+
+  formatDuration(seconds) {
+    if (!seconds) return 'Unknown';
+    
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    } else {
+      return `${minutes}m`;
+    }
+  }
+
+  toggleDescription() {
+    if (!this.elements.description || !this.elements.descriptionToggle) return;
+    
+    const isExpanded = this.elements.description.classList.contains('expanded');
+    
+    if (isExpanded) {
+      this.elements.description.classList.remove('expanded');
+      this.elements.descriptionToggle.classList.remove('expanded');
+      this.elements.descriptionToggle.querySelector('.toggle-text').textContent = 'Show More';
+    } else {
+      this.elements.description.classList.add('expanded');
+      this.elements.descriptionToggle.classList.add('expanded');
+      this.elements.descriptionToggle.querySelector('.toggle-text').textContent = 'Show Less';
+    }
+  }
+
+  toggleVolumeSection() {
+    if (!this.elements.volumeSection) return;
+    
+    this.elements.volumeSection.classList.toggle('visible');
+  }
+
+  syncWithGlobalPlayer() {
+    if (!this.globalRadioPlayer) return;
+    
+    // Sync play/pause state
+    const isPlaying = this.globalRadioPlayer.isPlaying;
+    if (this.elements.playBtn) {
+      const icon = this.elements.playBtn.querySelector('i');
+      if (icon) {
+        icon.classList.toggle('fa-play', !isPlaying);
+        icon.classList.toggle('fa-pause', isPlaying);
+      }
+    }
+    
+    // Sync volume
+    if (this.elements.volumeSlider) {
+      this.elements.volumeSlider.value = this.globalRadioPlayer.volumeLevel * 100;
+    }
+    
+    // Sync volume icon
+    if (this.elements.volumeBtn) {
+      const icon = this.elements.volumeBtn.querySelector('i');
+      if (icon) {
+        const isMuted = this.globalRadioPlayer.isMuted;
+        const volume = this.globalRadioPlayer.volumeLevel;
+        
+        icon.classList.remove('fa-volume-off', 'fa-volume-down', 'fa-volume-up');
+        
+        if (isMuted || volume === 0) {
+          icon.classList.add('fa-volume-off');
+        } else if (volume < 0.5) {
+          icon.classList.add('fa-volume-down');
+        } else {
+          icon.classList.add('fa-volume-up');
+        }
+      }
+    }
+  }
+
+  startProgressUpdates() {
+    this.stopProgressUpdates(); // Clear any existing interval
+    
+    this.progressInterval = setInterval(() => {
+      this.updateProgress();
+    }, 1000);
+  }
+
+  stopProgressUpdates() {
+    if (this.progressInterval) {
+      clearInterval(this.progressInterval);
+      this.progressInterval = null;
+    }
+  }
+
+  updateProgress() {
+    if (!this.globalRadioPlayer || !this.globalRadioPlayer.audioPlayer) return;
+    
+    const audio = this.globalRadioPlayer.audioPlayer;
+    const currentTime = audio.currentTime || 0;
+    const duration = audio.duration || 0;
+    
+    // Update progress bar
+    if (this.elements.progress && duration > 0) {
+      const progressPercent = (currentTime / duration) * 100;
+      this.elements.progress.style.width = `${progressPercent}%`;
+    }
+    
+    // Update time displays
+    if (this.elements.currentTime) {
+      this.elements.currentTime.textContent = this.formatTime(currentTime);
+    }
+    
+    if (this.elements.duration) {
+      this.elements.duration.textContent = this.formatTime(duration);
+    }
+    
+    // Sync play/pause state (in case it changed)
+    this.syncWithGlobalPlayer();
+  }
+
+  formatTime(seconds) {
+    if (!seconds || isNaN(seconds)) return '0:00';
+    
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+    
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+  }
+
+  handleProgressClick(e) {
+    if (!this.globalRadioPlayer || !this.globalRadioPlayer.audioPlayer) return;
+    
+    const progressBar = e.currentTarget;
+    const rect = progressBar.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const progressPercent = clickX / rect.width;
+    
+    const audio = this.globalRadioPlayer.audioPlayer;
+    if (audio.duration) {
+      const newTime = progressPercent * audio.duration;
+      audio.currentTime = newTime;
+    }
+  }
+
+  handleTouchStart(e) {
+    if (e.touches.length !== 1) return;
+    
+    this.touchStartY = e.touches[0].clientY;
+    this.touchStartTime = Date.now();
+    this.touchStartX = e.touches[0].clientX;
+  }
+
+  handleTouchMove(e) {
+    if (e.touches.length !== 1) return;
+    
+    const currentY = e.touches[0].clientY;
+    const deltaY = currentY - this.touchStartY;
+    
+    // Only prevent default scrolling if we're swiping down near the top
+    if (this.touchStartY < 100 && deltaY > 0) {
+      e.preventDefault();
+    }
+  }
+
+  handleTouchEnd(e) {
+    if (e.changedTouches.length !== 1) return;
+    
+    const touchEndY = e.changedTouches[0].clientY;
+    const touchEndX = e.changedTouches[0].clientX;
+    const touchEndTime = Date.now();
+    
+    const deltaY = touchEndY - this.touchStartY;
+    const deltaX = Math.abs(touchEndX - this.touchStartX);
+    const deltaTime = touchEndTime - this.touchStartTime;
+    const velocity = Math.abs(deltaY) / deltaTime;
+    
+    // Check if this is a downward swipe with sufficient distance and velocity
+    // Also ensure it's more vertical than horizontal
+    if (deltaY > 50 && velocity > 0.3 && deltaX < 100 && this.touchStartY < 150) {
+      this.hide();
+    }
+  }
+
+  showLoading(show) {
+    this.isLoading = show;
+    
+    if (this.elements.artworkOverlay) {
+      this.elements.artworkOverlay.classList.toggle('visible', show);
+    }
+  }
+}
+
+// Initialize full-screen player globally
+window.fullScreenPlayer = null;
+
 // Fallback initialization for direct page loads
 document.addEventListener('DOMContentLoaded', function() {
   // Small delay to ensure everything is loaded
@@ -4358,6 +5066,12 @@ document.addEventListener('DOMContentLoaded', function() {
     if (window.location.pathname.includes('/directory') && window.globalRadioPlayer) {
       console.log('🔍 Fallback: Initializing directory page on direct load');
       window.globalRadioPlayer.setupDirectoryFunctionality();
+    }
+    
+    // Full-screen player fallback
+    if (window.globalRadioPlayer && !window.fullScreenPlayer) {
+      console.log('📱 Fallback: Initializing full-screen player on direct load');
+      window.globalRadioPlayer.setupFullScreenPlayer();
     }
   }, 200);
 });
