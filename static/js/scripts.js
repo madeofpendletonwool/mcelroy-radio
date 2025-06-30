@@ -472,8 +472,8 @@ class GlobalRadioPlayer {
         this.stationManager.rebindDOM();
       }
 
-      // Update episode info for current station (much faster than force update)
-      this.checkForNewEpisode(true);
+      // Update episode info for current station (non-forced to avoid interrupting playback)
+      this.checkForNewEpisode(false);
     } else {
       console.log("🎵 Not on home page, skipping station manager");
     }
