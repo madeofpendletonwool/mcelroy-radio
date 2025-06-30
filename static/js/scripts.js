@@ -484,6 +484,9 @@ class GlobalRadioPlayer {
     // Analytics page functionality
     this.setupAnalyticsFunctionality();
 
+    // About page functionality
+    this.setupAboutPageFunctionality();
+
     // NEW: Bind episode play buttons
     if (document.querySelectorAll(".btn-play").length > 0) {
       bindDirectoryPlayButtons();
@@ -661,6 +664,31 @@ class GlobalRadioPlayer {
     setTimeout(() => {
       console.log("📊 Calling AnalyticsManager.init()");
       window.analyticsManager.init();
+    }, 100);
+  }
+
+  setupAboutPageFunctionality() {
+    console.log("📄 Setting up about page functionality...");
+
+    // Check if we're on the about page
+    if (!window.location.pathname.includes("/about")) {
+      console.log("📄 Not on about page, skipping about setup");
+      return;
+    }
+
+    console.log("📄 About page detected, initializing show more functionality...");
+
+    // Reset the about page manager state for fresh initialization
+    if (window.aboutPageManager) {
+      window.aboutPageManager.reset();
+    }
+
+    // Small delay to ensure DOM is ready
+    setTimeout(() => {
+      if (window.aboutPageManager) {
+        console.log("📄 Calling AboutPageManager.init()");
+        window.aboutPageManager.init();
+      }
     }, 100);
   }
 
@@ -4190,4 +4218,146 @@ window.addEventListener("load", function () {
       window.analyticsManager.init();
     }
   }, 1000);
+});
+
+// About Page Show More Shows Functionality
+class AboutPageManager {
+  constructor() {
+    this.isExpanded = false;
+    this.isInitialized = false;
+  }
+
+  init() {
+    if (this.isInitialized) return;
+    
+    // Only initialize if we're on the about page
+    if (!window.location.pathname.includes('/about')) return;
+    
+    this.randomizeShowCards();
+    this.setupShowMoreButton();
+    this.isInitialized = true;
+    console.log('📄 About page show more functionality initialized');
+  }
+
+  randomizeShowCards() {
+    const showsGrid = document.querySelector(".shows-grid");
+    if (!showsGrid) return;
+
+    const allShowCards = Array.from(showsGrid.children);
+
+    // Shuffle the array using Fisher-Yates algorithm
+    for (let i = allShowCards.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [allShowCards[i], allShowCards[j]] = [allShowCards[j], allShowCards[i]];
+    }
+
+    // Clear the grid and re-append in random order
+    showsGrid.innerHTML = "";
+
+    // Show first 6 cards, hide the rest
+    allShowCards.forEach((card, index) => {
+      if (index < 6) {
+        card.classList.remove("hidden-initially");
+      } else {
+        card.classList.add("hidden-initially");
+      }
+      showsGrid.appendChild(card);
+    });
+
+    // Update the show count
+    this.updateShowCount();
+  }
+
+  setupShowMoreButton() {
+    const showMoreBtn = document.getElementById("show-more-btn");
+    if (!showMoreBtn) return;
+
+    // Remove any existing event listeners
+    const newBtn = showMoreBtn.cloneNode(true);
+    showMoreBtn.parentNode.replaceChild(newBtn, showMoreBtn);
+
+    // Add new event listener
+    newBtn.addEventListener("click", () => {
+      const hiddenCards = document.querySelectorAll(".show-card.hidden-initially");
+
+      if (!this.isExpanded) {
+        // Show all hidden cards with animation
+        hiddenCards.forEach((card, index) => {
+          setTimeout(() => {
+            card.classList.remove("hidden-initially");
+            card.classList.add("revealed");
+          }, index * 100); // Stagger animation
+        });
+
+        // Update button text and icon
+        newBtn.innerHTML = `
+          <i class="fas fa-chevron-up"></i>
+          <span>Show Fewer Shows</span>
+        `;
+        newBtn.classList.add("expanded");
+        this.isExpanded = true;
+      } else {
+        // Hide cards again
+        const revealedCards = document.querySelectorAll(".show-card.revealed");
+        revealedCards.forEach((card) => {
+          card.classList.add("hidden-initially");
+          card.classList.remove("revealed");
+        });
+
+        // Update button text and icon
+        this.updateShowCount();
+        newBtn.classList.remove("expanded");
+        this.isExpanded = false;
+
+        // Scroll back to shows section
+        const showsSection = document.querySelector(".shows-section h2");
+        if (showsSection) {
+          showsSection.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
+        }
+      }
+    });
+  }
+
+  updateShowCount() {
+    const showMoreBtn = document.getElementById("show-more-btn");
+    const hiddenCards = document.querySelectorAll(".show-card.hidden-initially");
+
+    if (showMoreBtn && hiddenCards.length > 0) {
+      showMoreBtn.innerHTML = `
+        <i class="fas fa-chevron-down"></i>
+        <span>Show More Shows</span>
+        <span class="show-count">(${hiddenCards.length} more)</span>
+      `;
+    }
+  }
+
+  // Reset state when navigating away
+  reset() {
+    this.isExpanded = false;
+    this.isInitialized = false;
+  }
+}
+
+// Initialize about page manager globally
+window.aboutPageManager = new AboutPageManager();
+
+// Fallback initialization for direct page loads
+document.addEventListener('DOMContentLoaded', function() {
+  // Small delay to ensure everything is loaded
+  setTimeout(() => {
+    // About page fallback
+    if (window.location.pathname.includes('/about') && window.aboutPageManager && !window.aboutPageManager.isInitialized) {
+      console.log('📄 Fallback: Initializing about page on direct load');
+      window.aboutPageManager.init();
+    }
+    
+    // Directory page fallback
+    if (window.location.pathname.includes('/directory') && window.globalRadioPlayer) {
+      console.log('🔍 Fallback: Initializing directory page on direct load');
+      window.globalRadioPlayer.setupDirectoryFunctionality();
+    }
+  }, 200);
 });

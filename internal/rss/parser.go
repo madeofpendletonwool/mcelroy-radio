@@ -41,7 +41,7 @@ func (p *Parser) ParseFeeds(feeds []config.RSSFeed) ([]*models.Episode, error) {
 		log.Printf("Found %d episodes in feed: %s", len(feed.Items), feedConfig.Name)
 
 		for _, item := range feed.Items {
-			episode := p.convertToEpisode(item, feedConfig.Name)
+			episode := p.convertToEpisode(item, feed, feedConfig.Name)
 			if episode != nil {
 				allEpisodes = append(allEpisodes, episode)
 			}
@@ -53,7 +53,7 @@ func (p *Parser) ParseFeeds(feeds []config.RSSFeed) ([]*models.Episode, error) {
 }
 
 // convertToEpisode converts an RSS item to our Episode model
-func (p *Parser) convertToEpisode(item *gofeed.Item, showName string) *models.Episode {
+func (p *Parser) convertToEpisode(item *gofeed.Item, feed *gofeed.Feed, showName string) *models.Episode {
 	// Find the audio enclosure
 	var audioURL string
 	var fileSize int64
@@ -100,7 +100,7 @@ func (p *Parser) convertToEpisode(item *gofeed.Item, showName string) *models.Ep
 		ShowName:    showName,
 		Description: item.Description,
 		AudioPath:   audioURL, // This now points to the RSS audio URL
-		ImagePath:   models.GetImagePathForShow(showName), // Set default image based on show
+		ImagePath:   p.getEpisodeImagePath(item, feed, showName), // Get episode-specific artwork with fallbacks
 		Duration:    duration,
 		PublishedAt: publishedAt,
 		FileSize:    fileSize,
@@ -176,4 +176,32 @@ func (p *Parser) parseDurationString(durationStr string) float64 {
 	}
 
 	return totalSeconds
+}
+
+// getEpisodeImagePath determines the best image path for an episode with fallback hierarchy:
+// 1. Episode-specific artwork from RSS item
+// 2. Feed-level artwork from RSS feed
+// 3. Show-specific static image
+// 4. Default fallback image
+func (p *Parser) getEpisodeImagePath(item *gofeed.Item, feed *gofeed.Feed, showName string) string {
+	// 1. Check for episode-specific artwork in iTunes extension
+	if item.ITunesExt != nil && item.ITunesExt.Image != "" {
+		return item.ITunesExt.Image
+	}
+
+	// 2. Check for feed-level artwork
+	if feed.ITunesExt != nil && feed.ITunesExt.Image != "" {
+		return feed.ITunesExt.Image
+	}
+
+	// Also check feed.Image as a fallback
+	if feed.Image != nil && feed.Image.URL != "" {
+		return feed.Image.URL
+	}
+
+	// 3. Fall back to show-specific static image
+	showImagePath := models.GetImagePathForShow(showName)
+	
+	// 4. If show image is the default, that's our final fallback
+	return showImagePath
 }
