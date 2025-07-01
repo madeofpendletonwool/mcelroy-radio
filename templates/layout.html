@@ -202,7 +202,10 @@
             <div class="fullscreen-player-content">
                 <!-- Header with close button -->
                 <div class="fullscreen-player-header">
-                    <button class="fullscreen-close-btn" id="fullscreen-close-btn">
+                    <button
+                        class="fullscreen-close-btn"
+                        id="fullscreen-close-btn"
+                    >
                         <i class="fas fa-chevron-down"></i>
                     </button>
                     <h3 class="fullscreen-player-title">Now Playing</h3>
@@ -212,52 +215,144 @@
                 <!-- Episode artwork section -->
                 <div class="fullscreen-artwork-section">
                     <div class="fullscreen-artwork-container">
-                        <img 
-                            src="/static/img/default-cover.png" 
+                        <img
+                            src="/static/img/default-cover.png"
                             alt="Episode Cover"
                             id="fullscreen-episode-cover"
                             class="fullscreen-episode-image"
                         />
                         <div class="fullscreen-artwork-overlay">
-                            <div class="fullscreen-loading-spinner" id="fullscreen-loading-spinner">
+                            <div
+                                class="fullscreen-loading-spinner"
+                                id="fullscreen-loading-spinner"
+                            >
                                 <i class="fas fa-spinner fa-spin"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Episode details (moved inside artwork section for desktop) -->
+                    <div class="fullscreen-episode-info">
+                        <h2
+                            class="fullscreen-episode-title"
+                            id="fullscreen-episode-title"
+                        >
+                            McElroy Radio
+                        </h2>
+                        <h3
+                            class="fullscreen-show-name"
+                            id="fullscreen-show-name"
+                        >
+                            Where the goofs never end!
+                        </h3>
+
+                        <!-- Episode metadata -->
+                        <div class="fullscreen-episode-meta">
+                            <div class="fullscreen-meta-item">
+                                <i class="fas fa-calendar"></i>
+                                <span id="fullscreen-episode-date"
+                                    >Loading...</span
+                                >
+                            </div>
+                            <div class="fullscreen-meta-item">
+                                <i class="fas fa-clock"></i>
+                                <span id="fullscreen-episode-duration"
+                                    >Loading...</span
+                                >
+                            </div>
+                            <div class="fullscreen-meta-item">
+                                <i class="fas fa-user"></i>
+                                <span id="fullscreen-episode-artist"
+                                    >Loading...</span
+                                >
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Episode details -->
-                <div class="fullscreen-episode-info">
-                    <h2 class="fullscreen-episode-title" id="fullscreen-episode-title">
-                        McElroy Radio
-                    </h2>
-                    <h3 class="fullscreen-show-name" id="fullscreen-show-name">
-                        Where the goofs never end!
-                    </h3>
-                    
-                    <!-- Episode metadata -->
-                    <div class="fullscreen-episode-meta">
-                        <div class="fullscreen-meta-item">
-                            <i class="fas fa-calendar"></i>
-                            <span id="fullscreen-episode-date">Loading...</span>
+                <!-- Controls container (for desktop layout) -->
+                <div class="fullscreen-controls-container">
+                    <!-- Progress bar -->
+                    <div class="fullscreen-progress-section">
+                        <div
+                            class="fullscreen-progress-bar"
+                            id="fullscreen-progress-bar"
+                        >
+                            <div
+                                class="fullscreen-progress"
+                                id="fullscreen-progress"
+                            ></div>
                         </div>
-                        <div class="fullscreen-meta-item">
-                            <i class="fas fa-clock"></i>
-                            <span id="fullscreen-episode-duration">Loading...</span>
+                        <div class="fullscreen-time-info">
+                            <span
+                                class="fullscreen-current-time"
+                                id="fullscreen-current-time"
+                                >0:00</span
+                            >
+                            <span
+                                class="fullscreen-duration"
+                                id="fullscreen-duration"
+                                >0:00</span
+                            >
                         </div>
-                        <div class="fullscreen-meta-item">
-                            <i class="fas fa-user"></i>
-                            <span id="fullscreen-episode-artist">Loading...</span>
+                    </div>
+
+                    <!-- Controls -->
+                    <div class="fullscreen-controls">
+                        <button
+                            class="fullscreen-control-btn"
+                            id="fullscreen-rewind-btn"
+                        >
+                            <i class="fas fa-backward"></i>
+                        </button>
+                        <button
+                            class="fullscreen-control-btn fullscreen-play-btn"
+                            id="fullscreen-play-btn"
+                        >
+                            <i class="fas fa-play"></i>
+                        </button>
+                        <button
+                            class="fullscreen-control-btn"
+                            id="fullscreen-volume-btn"
+                        >
+                            <i class="fas fa-volume-up"></i>
+                        </button>
+                    </div>
+
+                    <!-- Volume slider (hidden by default) -->
+                    <div
+                        class="fullscreen-volume-section"
+                        id="fullscreen-volume-section"
+                    >
+                        <div class="fullscreen-volume-slider-container">
+                            <i class="fas fa-volume-down"></i>
+                            <input
+                                type="range"
+                                min="0"
+                                max="100"
+                                value="80"
+                                class="fullscreen-volume-slider"
+                                id="fullscreen-volume-slider"
+                            />
+                            <i class="fas fa-volume-up"></i>
                         </div>
                     </div>
 
                     <!-- Episode description -->
                     <div class="fullscreen-description-section">
-                        <h4 class="fullscreen-description-title">Description</h4>
-                        <div class="fullscreen-description" id="fullscreen-episode-description">
+                        <h4 class="fullscreen-description-title">
+                            Description
+                        </h4>
+                        <div
+                            class="fullscreen-description"
+                            id="fullscreen-episode-description"
+                        >
                             <p>Loading episode details...</p>
                         </div>
-                        <button class="fullscreen-description-toggle" id="fullscreen-description-toggle">
+                        <button
+                            class="fullscreen-description-toggle"
+                            id="fullscreen-description-toggle"
+                        >
                             <span class="toggle-text">Show More</span>
                             <i class="fas fa-chevron-down"></i>
                         </button>
@@ -269,55 +364,21 @@
                             <i class="fas fa-lightbulb"></i>
                             McElroy Fun Fact
                         </h4>
-                        <p class="fullscreen-random-fact" id="fullscreen-random-fact">
+                        <p
+                            class="fullscreen-random-fact"
+                            id="fullscreen-random-fact"
+                        >
                             Loading random fact...
                         </p>
-                    </div>
-                </div>
-
-                <!-- Progress bar -->
-                <div class="fullscreen-progress-section">
-                    <div class="fullscreen-progress-bar" id="fullscreen-progress-bar">
-                        <div class="fullscreen-progress" id="fullscreen-progress"></div>
-                    </div>
-                    <div class="fullscreen-time-info">
-                        <span class="fullscreen-current-time" id="fullscreen-current-time">0:00</span>
-                        <span class="fullscreen-duration" id="fullscreen-duration">0:00</span>
-                    </div>
-                </div>
-
-                <!-- Controls -->
-                <div class="fullscreen-controls">
-                    <button class="fullscreen-control-btn" id="fullscreen-rewind-btn">
-                        <i class="fas fa-backward"></i>
-                    </button>
-                    <button class="fullscreen-control-btn fullscreen-play-btn" id="fullscreen-play-btn">
-                        <i class="fas fa-play"></i>
-                    </button>
-                    <button class="fullscreen-control-btn" id="fullscreen-volume-btn">
-                        <i class="fas fa-volume-up"></i>
-                    </button>
-                </div>
-
-                <!-- Volume slider (hidden by default) -->
-                <div class="fullscreen-volume-section" id="fullscreen-volume-section">
-                    <div class="fullscreen-volume-slider-container">
-                        <i class="fas fa-volume-down"></i>
-                        <input 
-                            type="range" 
-                            min="0" 
-                            max="100" 
-                            value="80"
-                            class="fullscreen-volume-slider" 
-                            id="fullscreen-volume-slider"
-                        />
-                        <i class="fas fa-volume-up"></i>
                     </div>
                 </div>
             </div>
 
             <!-- Swipe indicator for mobile -->
-            <div class="fullscreen-swipe-indicator" id="fullscreen-swipe-indicator">
+            <div
+                class="fullscreen-swipe-indicator"
+                id="fullscreen-swipe-indicator"
+            >
                 <div class="swipe-indicator-line"></div>
             </div>
         </div>

@@ -11,6 +11,9 @@ services:
     volumes:
       # Mount config directory for custom station configurations
       - ./config:/opt/mcelroy-content/config
+      # Mount static files for development (CSS/JS updates without rebuild)
+      - ./static:/app/static
+      - ./templates:/app/templates
     environment:
       - PORT=8080
       - RSS_FEEDS=My Brother My Brother and Me:https://feeds.simplecast.com/wjQvYtdl,The Adventure Zone:https://feeds.simplecast.com/cYQVc__c

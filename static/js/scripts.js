@@ -4389,6 +4389,7 @@ class FullScreenPlayer {
   init() {
     this.cacheElements();
     this.setupEventListeners();
+    this.setupAudioSyncListeners();
     console.log('📱 Full-screen player initialized');
   }
 
@@ -4519,6 +4520,14 @@ class FullScreenPlayer {
     if (this.elements.playBtn) {
       this.elements.playBtn.addEventListener('click', () => {
         if (this.globalRadioPlayer) {
+          // Update UI immediately for responsive feedback
+          const icon = this.elements.playBtn.querySelector('i');
+          if (icon) {
+            const willBePlaying = !this.globalRadioPlayer.isPlaying;
+            icon.classList.toggle('fa-play', !willBePlaying);
+            icon.classList.toggle('fa-pause', willBePlaying);
+          }
+          
           this.globalRadioPlayer.togglePlay();
         }
       });
@@ -4568,6 +4577,46 @@ class FullScreenPlayer {
     });
   }
 
+  setupAudioSyncListeners() {
+    // Add real-time sync with the global audio player to prevent lag
+    if (this.globalRadioPlayer && this.globalRadioPlayer.audioPlayer) {
+      const audio = this.globalRadioPlayer.audioPlayer;
+      
+      // Listen for play/pause events to sync immediately
+      audio.addEventListener('play', () => {
+        if (this.elements.playBtn) {
+          const icon = this.elements.playBtn.querySelector('i');
+          if (icon) {
+            icon.classList.remove('fa-play');
+            icon.classList.add('fa-pause');
+          }
+        }
+      });
+      
+      audio.addEventListener('pause', () => {
+        if (this.elements.playBtn) {
+          const icon = this.elements.playBtn.querySelector('i');
+          if (icon) {
+            icon.classList.remove('fa-pause');
+            icon.classList.add('fa-play');
+          }
+        }
+      });
+      
+      // Listen for volume changes
+      audio.addEventListener('volumechange', () => {
+        this.syncWithGlobalPlayer();
+      });
+      
+      // Listen for time updates for progress
+      audio.addEventListener('timeupdate', () => {
+        if (this.isVisible) {
+          this.updateProgress();
+        }
+      });
+    }
+  }
+
   async show() {
     if (this.isVisible || this.autoShowBlocked) {
       if (this.autoShowBlocked) {
@@ -4598,7 +4647,7 @@ class FullScreenPlayer {
       // Clear all existing styles first
       this.elements.container.style.cssText = '';
       
-      // Set new styles for showing
+      // Set new styles for showing (only positioning/visibility, let CSS handle layout)
       this.elements.container.style.cssText = `
         position: fixed !important;
         top: 0 !important;
@@ -4608,7 +4657,6 @@ class FullScreenPlayer {
         z-index: 9999 !important;
         visibility: visible !important;
         display: flex !important;
-        flex-direction: column !important;
         margin: 0 !important;
         padding: 0 !important;
         background: ${bgColor} !important;

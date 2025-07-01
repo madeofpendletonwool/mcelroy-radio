@@ -1611,7 +1611,7 @@ footer {
 }
 
 /* Mobile Responsive Design */
-@media (max-width: 768px) {
+@media (max-width: 899px) {
     :root {
         --player-bar-height: 120px; /* Taller on mobile for better touch targets */
     }
@@ -2022,8 +2022,10 @@ footer {
     .episodes-grid {
         grid-template-columns: 1fr;
     }
-}/* Mobile Responsive Design */
-@media (max-width: 768px) {
+}
+
+/* Mobile Responsive Design */
+@media (max-width: 899px) {
     :root {
         --player-bar-height: 120px; /* Taller on mobile for better touch targets */
     }
@@ -2307,9 +2309,10 @@ footer {
     .theme-dropdown {
         display: none !important;
     }
+}
 
 /* Mobile Responsive Design */
-@media (max-width: 768px) {
+@media (max-width: 899px) {
     :root {
         --player-bar-height: 120px; /* Taller on mobile for better touch targets */
     }
@@ -3156,7 +3159,32 @@ header,
 }
 
 /* Mobile Optimizations */
-@media (max-width: 768px) {
+@media (max-width: 899px) {
+    /* Force mobile layout */
+    .fullscreen-player-content {
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        padding: 0 !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+        height: 100% !important;
+    }
+    
+    .fullscreen-artwork-section {
+        flex: unset !important;
+        padding: 40px 20px !important;
+        background: var(--surface-color) !important;
+        min-width: unset !important;
+        max-width: 100% !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        align-items: center !important;
+        width: 100% !important;
+        flex-shrink: 0 !important;
+    }
+    
     .fullscreen-artwork-container {
         width: 250px !important;
         height: 250px !important;
@@ -3164,6 +3192,28 @@ header,
         min-height: 250px !important;
         max-width: 250px !important;
         max-height: 250px !important;
+        border-radius: 20px !important;
+        overflow: hidden !important;
+        margin-bottom: 0 !important;
+    }
+    
+    .fullscreen-episode-info {
+        padding: 20px !important;
+        text-align: center !important;
+        width: 100% !important;
+    }
+    
+    .fullscreen-controls-container {
+        flex: 1 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: flex-start !important;
+        padding: 20px !important;
+        min-width: unset !important;
+        max-width: 100% !important;
+        background: var(--background-color) !important;
+        border-left: none !important;
+        width: 100% !important;
     }
     
     #fullscreen-episode-cover {
@@ -3173,30 +3223,80 @@ header,
         min-height: 250px !important;
         max-width: 250px !important;
         max-height: 250px !important;
+        border-radius: 20px !important;
     }
     
     .fullscreen-episode-meta {
-        gap: 16px;
+        gap: 16px !important;
+        flex-direction: column !important;
+        flex-wrap: nowrap !important;
+        margin-bottom: 0 !important;
     }
     
     .fullscreen-meta-item {
-        font-size: 13px;
+        font-size: 13px !important;
+    }
+    
+    .fullscreen-episode-title {
+        font-size: 1.5rem !important;
+        line-height: 1.3 !important;
+        margin-bottom: 12px !important;
+    }
+    
+    .fullscreen-show-name {
+        font-size: 1.1rem !important;
+        margin-bottom: 16px !important;
+    }
+    
+    .fullscreen-progress-section {
+        order: unset !important;
+        margin-bottom: 20px !important;
+    }
+    
+    .fullscreen-progress-bar {
+        height: 6px !important;
+        margin-bottom: 12px !important;
+    }
+    
+    .fullscreen-time-info {
+        font-size: 0.9rem !important;
     }
     
     .fullscreen-controls {
-        gap: 32px;
+        gap: 32px !important;
+        order: unset !important;
+        margin-bottom: 20px !important;
     }
     
     .fullscreen-control-btn {
-        width: 56px;
-        height: 56px;
-        font-size: 18px;
+        width: 56px !important;
+        height: 56px !important;
+        font-size: 18px !important;
     }
     
     .fullscreen-play-btn {
-        width: 72px;
-        height: 72px;
-        font-size: 24px;
+        width: 72px !important;
+        height: 72px !important;
+        font-size: 24px !important;
+    }
+    
+    .fullscreen-volume-section {
+        order: unset !important;
+        margin-top: 0 !important;
+    }
+    
+    .fullscreen-description-section {
+        order: unset !important;
+        margin-top: 20px !important;
+    }
+    
+    .fullscreen-fact-section {
+        order: unset !important;
+        margin-top: 20px !important;
+        padding: 16px !important;
+        background: rgba(94, 96, 206, 0.1) !important;
+        border-radius: 12px !important;
+        border: 1px solid rgba(94, 96, 206, 0.2) !important;
     }
 }
 
@@ -3236,4 +3336,76 @@ header,
 .global-player-bar .volume-btn,
 .global-player-bar .volume-slider {
     cursor: pointer;
+}
+
+/* Desktop Responsive Styles for Full-Screen Player */
+@media (min-width: 900px) {
+    /* Use the same great mobile styles, just with larger artwork */
+    .fullscreen-artwork-container {
+        width: 350px !important;
+        height: 350px !important;
+        min-width: 350px !important;
+        min-height: 350px !important;
+        max-width: 350px !important;
+        max-height: 350px !important;
+        border-radius: 20px !important;
+        overflow: hidden !important;
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3) !important;
+    }
+    
+    #fullscreen-episode-cover {
+        width: 350px !important;
+        height: 350px !important;
+        min-width: 350px !important;
+        min-height: 350px !important;
+        max-width: 350px !important;
+        max-height: 350px !important;
+        border-radius: 20px !important;
+    }
+    
+    .fullscreen-episode-title {
+        font-size: 2rem !important;
+        line-height: 1.2 !important;
+        margin-bottom: 16px !important;
+    }
+    
+    .fullscreen-show-name {
+        font-size: 1.3rem !important;
+        margin-bottom: 20px !important;
+    }
+    
+    .fullscreen-episode-meta {
+        gap: 20px !important;
+        margin-bottom: 20px !important;
+    }
+    
+    .fullscreen-meta-item {
+        font-size: 1rem !important;
+    }
+    
+    .fullscreen-controls {
+        gap: 40px !important;
+        margin-bottom: 30px !important;
+    }
+    
+    .fullscreen-control-btn {
+        width: 70px !important;
+        height: 70px !important;
+        font-size: 22px !important;
+    }
+    
+    .fullscreen-play-btn {
+        width: 85px !important;
+        height: 85px !important;
+        font-size: 28px !important;
+    }
+    
+    .fullscreen-progress-bar {
+        height: 8px !important;
+        margin-bottom: 16px !important;
+    }
+    
+    .fullscreen-time-info {
+        font-size: 1.1rem !important;
+    }
 }
