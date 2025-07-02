@@ -38,8 +38,8 @@ func GetImagePathForShow(showName string) string {
 		return "/static/images/shows/wonderful.jpg"
 	} else if strings.Contains(showNameLower, "besties") {
 		return "/static/images/shows/besties.jpg"
-	} else if strings.Contains(showNameLower, "bunker") {
-		return "/static/images/shows/bunker-buddies.jpg"
+	} else if strings.Contains(showNameLower, "furious") {
+		return "/static/images/shows/fast-and-furious-and-justin-and-sydnee.jpg"
 	} else if strings.Contains(showNameLower, "cool") && strings.Contains(showNameLower, "games") {
 		return "/static/images/shows/coolgames-inc.jpg"
 	} else if strings.Contains(showNameLower, "empty") {
