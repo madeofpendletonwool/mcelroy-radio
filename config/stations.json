@@ -1,0 +1,75 @@
+{
+  "stations": [
+    {
+      "id": "mcelroy_brothers",
+      "name": "McElroy Brothers",
+      "description": "Just the main three brothers",
+      "shows": ["My Brother, My Brother and Me", "The Adventure Zone"],
+      "color": "#ff7c7c",
+      "icon": "fa-users"
+    },
+    {
+      "id": "brain_fuel",
+      "name": "Brain Fuel",
+      "description": "Weird facts, history, and fascinating deep dives",
+      "shows": [
+        "Sawbones A Marital Tour of Misguided Medicine",
+        "Shmanners",
+        "Secretly Incredibly Fascinating",
+        "Run A Doctor Who Fancast"
+      ],
+      "color": "#2980b9",
+      "icon": "fa-lightbulb"
+    },
+    {
+      "id": "gametime",
+      "name": "Gametime",
+      "description": "All things games—from reviews to ridiculous ideas",
+      "shows": ["CoolGames Inc", "The Besties", "Quality Control"],
+      "color": "#e67e22",
+      "icon": "fa-gamepad"
+    },
+    {
+      "id": "short_and_sweet",
+      "name": "Short and Sweet",
+      "description": "Wholesome vibes and snackable episodes",
+      "shows": ["Positiviteeny", "Surprisingly Nice", "The Empty Bowl"],
+      "color": "#f1c40f",
+      "icon": "fa-smile"
+    },
+    {
+      "id": "mbmbam_extended",
+      "name": "MBMBaM Extended Universe",
+      "description": "Spin-offs, crossovers, and the brothers' weirdest corners",
+      "shows": [
+        "The McElroy Brothers Will Be In Trolls World Tour",
+        "Til Death Do Us Blart",
+        "Trends Like These",
+        "Interrobang with Travis and Tybee",
+        "Positiviteeny",
+        "Run A Doctor Who Fancast",
+        "Surprisingly Nice",
+        "The Kind Rewind",
+        "Fast and Furious and Justin and Sydnee"
+      ],
+      "color": "#c0392b",
+      "icon": "fa-universe"
+    },
+    {
+      "id": "not_the_brothers",
+      "name": "Not the Brothers",
+      "description": "Shows made by McElroy family or friends, but without the brothers themselves",
+      "shows": ["Still Buffering", "Neat! The Boozcast"],
+      "color": "#95a5a6",
+      "icon": "fa-user-slash"
+    },
+    {
+      "id": "guest_spots",
+      "name": "Guest Spots",
+      "description": "Where McElroys drop in for fun, but aren’t the regular hosts",
+      "shows": ["Bullseye with Jesse Thorn", "Secretly Incredibly Fascinating"],
+      "color": "#8e44ad",
+      "icon": "fa-microphone-alt"
+    }
+  ]
+}
