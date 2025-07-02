@@ -30,7 +30,7 @@ func NewAnalyticsStore(dataDir string) *AnalyticsStore {
 	store := &AnalyticsStore{
 		visits:    make([]models.Visit, 0),
 		dataPath:  dataPath,
-		maxVisits: 10000,
+		maxVisits: 0, // No limit - let it grow indefinitely
 	}
 
 	store.loadData()
@@ -106,7 +106,8 @@ func (as *AnalyticsStore) RecordVisit(ip, path, userAgent string) {
 
 	as.visits = append(as.visits, visit)
 
-	if len(as.visits) > as.maxVisits {
+	// Only enforce limit if maxVisits is greater than 0
+	if as.maxVisits > 0 && len(as.visits) > as.maxVisits {
 		as.visits = as.visits[len(as.visits)-as.maxVisits:]
 	}
 
@@ -175,7 +176,7 @@ func (as *AnalyticsStore) GetTimeSeriesData(period string) map[string]interface{
 	switch period {
 	case "hour":
 		cutoff = now.Add(-24 * time.Hour)
-		formatStr = "15:04" // HH:MM format
+		formatStr = "15:00" // HH:00 format (aggregate by hour)
 
 		// Initialize all hours in the last 24 hours
 		for i := 0; i < 24; i++ {
@@ -220,7 +221,7 @@ func (as *AnalyticsStore) GetTimeSeriesData(period string) map[string]interface{
 
 	default:
 		cutoff = now.Add(-24 * time.Hour)
-		formatStr = "15:04"
+		formatStr = "15:00"
 	}
 
 	// Count visits

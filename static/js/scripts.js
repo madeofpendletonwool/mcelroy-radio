@@ -761,8 +761,8 @@ class GlobalRadioPlayer {
           const period = e.target.dataset.period;
           console.log("📊 Time period selected:", period);
 
-          // Update active state
-          timePeriodButtons.forEach((btn) => btn.classList.remove("active"));
+          // Update active state - query fresh buttons
+          document.querySelectorAll("[data-period]").forEach((btn) => btn.classList.remove("active"));
           e.target.classList.add("active");
 
           // Trigger chart update if possible
@@ -4188,8 +4188,8 @@ class AnalyticsManager {
 
         console.log(`📊 Period changed to: ${period}`);
 
-        // Update active state
-        periodButtons.forEach((btn) => btn.classList.remove("active"));
+        // Update active state - query fresh buttons since they were replaced
+        document.querySelectorAll("[data-period]").forEach((btn) => btn.classList.remove("active"));
         newButton.classList.add("active");
 
         // Load new data
