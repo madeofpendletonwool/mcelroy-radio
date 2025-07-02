@@ -1212,9 +1212,9 @@ class GlobalRadioPlayer {
 
     // Progress bar clicking
 
-    // Progress bar clicking
+    // Progress bar clicking - DISABLED for radio behavior (no scrubbing allowed)
     if (this.progressBar) {
-      this.progressBar.addEventListener("click", (e) => this.seekToPosition(e));
+      // this.progressBar.addEventListener("click", (e) => this.seekToPosition(e));
     } else {
       // Try to find the progress bar as the top-level progress element
       const topProgressBar = document.querySelector(".player-progress");
@@ -1222,9 +1222,9 @@ class GlobalRadioPlayer {
         this.progressBar = topProgressBar;
         this.progress =
           topProgressBar.querySelector(".progress") || this.progress;
-        this.progressBar.addEventListener("click", (e) =>
-          this.seekToPosition(e),
-        );
+        // this.progressBar.addEventListener("click", (e) =>
+        //   this.seekToPosition(e),
+        // );
       }
     }
 
@@ -4684,9 +4684,9 @@ class FullScreenPlayer {
       });
     }
 
-    // Progress bar seeking
+    // Progress bar seeking - DISABLED for radio behavior (no scrubbing allowed)
     if (this.elements.progressBar) {
-      this.elements.progressBar.addEventListener('click', (e) => this.handleProgressClick(e));
+      // this.elements.progressBar.addEventListener('click', (e) => this.handleProgressClick(e));
     }
 
     // Keyboard shortcuts

@@ -455,7 +455,7 @@ nav ul li a:hover {
     border-radius: 3px;
     overflow: hidden;
     flex: 1;
-    cursor: pointer;
+    cursor: default;
     transition: var(--transition);
 }
 
@@ -2961,7 +2961,7 @@ header,
     background: var(--border-color);
     border-radius: 3px;
     overflow: hidden;
-    cursor: pointer;
+    cursor: default;
     margin-bottom: 12px;
 }
 
