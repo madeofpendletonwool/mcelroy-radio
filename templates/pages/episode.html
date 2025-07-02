@@ -1,0 +1,514 @@
+{{ define "content" }}
+<div class="container">
+    <div class="episode-page">
+        <!-- Episode Header -->
+        <div class="episode-header">
+            <button class="back-button" onclick="window.history.back()">
+                <i class="fas fa-arrow-left"></i> Back to Directory
+            </button>
+            
+            <div class="episode-hero">
+                <div class="episode-artwork">
+                    <img src="{{ .Episode.ImagePath }}" alt="{{ .Episode.ShowName }} Cover" />
+                </div>
+                
+                <div class="episode-main-info">
+                    <h1 class="episode-title">{{ .Episode.Title }}</h1>
+                    <h2 class="show-name">{{ .Episode.ShowName }}</h2>
+                    
+                    <div class="episode-meta">
+                        <span class="episode-date">
+                            <i class="fas fa-calendar"></i>
+                            {{ formatTime .Episode.PublishedAt }}
+                        </span>
+                        {{ if .Episode.Duration }}
+                        <span class="episode-duration">
+                            <i class="fas fa-clock"></i>
+                            {{ formatDuration .Episode.Duration }}
+                        </span>
+                        {{ end }}
+                        {{ if .Episode.FileSize }}
+                        <span class="file-size">
+                            <i class="fas fa-file-audio"></i>
+                            {{ formatFileSize .Episode.FileSize }}
+                        </span>
+                        {{ end }}
+                    </div>
+                    
+                    <div class="episode-actions">
+                        <button
+                            class="btn btn-primary btn-large btn-play"
+                            data-episode-id="{{ .Episode.ID }}"
+                            data-episode-title="{{ .Episode.Title }}"
+                            data-show-name="{{ .Episode.ShowName }}"
+                            data-episode-image="{{ .Episode.ImagePath }}"
+                            data-episode-duration="{{ .Episode.Duration }}"
+                            title="Play episode from beginning"
+                        >
+                            <i class="fas fa-play"></i> Play Episode
+                        </button>
+                        <a
+                            href="/download-episode?id={{ .Episode.ID }}"
+                            class="btn btn-secondary btn-large"
+                            title="Download episode"
+                        >
+                            <i class="fas fa-download"></i> Download
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Episode Details -->
+        <div class="episode-details">
+            {{ if .Episode.Description }}
+            <section class="episode-description">
+                <h3><i class="fas fa-info-circle"></i> Description</h3>
+                <div class="description-content">
+                    {{ .Episode.Description | html }}
+                </div>
+            </section>
+            {{ end }}
+            
+            <section class="episode-info-grid">
+                <div class="info-card">
+                    <h4><i class="fas fa-podcast"></i> Show Information</h4>
+                    <div class="info-content">
+                        <p><strong>Show:</strong> {{ .Episode.ShowName }}</p>
+                        {{ if .Episode.Artist }}
+                        <p><strong>Host:</strong> {{ .Episode.Artist }}</p>
+                        {{ end }}
+                        {{ if .Episode.Album }}
+                        <p><strong>Series:</strong> {{ .Episode.Album }}</p>
+                        {{ end }}
+                        {{ if .Episode.Genre }}
+                        <p><strong>Genre:</strong> {{ .Episode.Genre }}</p>
+                        {{ end }}
+                    </div>
+                </div>
+                
+                <div class="info-card">
+                    <h4><i class="fas fa-chart-bar"></i> Episode Stats</h4>
+                    <div class="info-content">
+                        <p><strong>Published:</strong> {{ formatTime .Episode.PublishedAt }}</p>
+                        {{ if .Episode.Duration }}
+                        <p><strong>Duration:</strong> {{ formatDuration .Episode.Duration }}</p>
+                        {{ end }}
+                        {{ if .Episode.FileSize }}
+                        <p><strong>File Size:</strong> {{ formatFileSize .Episode.FileSize }}</p>
+                        {{ end }}
+                        <p><strong>Episode ID:</strong> <code class="episode-id-code">{{ .Episode.ID }}</code></p>
+                    </div>
+                </div>
+            </section>
+            
+            {{ if .Episode.RandomFact }}
+            <section class="random-fact">
+                <h3><i class="fas fa-lightbulb"></i> Did You Know?</h3>
+                <blockquote>{{ .Episode.RandomFact }}</blockquote>
+            </section>
+            {{ end }}
+        </div>
+        
+        <!-- Related Episodes -->
+        {{ if .RelatedEpisodes }}
+        <section class="related-episodes">
+            <h3><i class="fas fa-list"></i> More from {{ .Episode.ShowName }}</h3>
+            <div class="related-grid">
+                {{ range .RelatedEpisodes }}
+                <div class="related-episode">
+                    <div class="related-artwork">
+                        <img src="{{ .ImagePath }}" alt="{{ .ShowName }} Cover" />
+                    </div>
+                    <div class="related-info">
+                        <h4><a href="/episode?id={{ .ID }}">{{ .Title }}</a></h4>
+                        <div class="related-meta">
+                            <span>{{ formatTime .PublishedAt }}</span>
+                            {{ if .Duration }}
+                            <span>{{ formatDuration .Duration }}</span>
+                            {{ end }}
+                        </div>
+                        <div class="related-actions">
+                            <button
+                                class="btn btn-small btn-play"
+                                data-episode-id="{{ .ID }}"
+                                data-episode-title="{{ .Title }}"
+                                data-show-name="{{ .ShowName }}"
+                                data-episode-image="{{ .ImagePath }}"
+                                data-episode-duration="{{ .Duration }}"
+                            >
+                                <i class="fas fa-play"></i> Play
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                {{ end }}
+            </div>
+        </section>
+        {{ end }}
+    </div>
+</div>
+
+<style>
+    .episode-page {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+    
+    .back-button {
+        background: none;
+        border: none;
+        color: var(--primary-color);
+        font-size: 0.9rem;
+        cursor: pointer;
+        padding: 10px 0;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: color 0.3s ease;
+    }
+    
+    .back-button:hover {
+        color: var(--secondary-color);
+    }
+    
+    .episode-header {
+        background-color: var(--surface-color);
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow);
+        padding: 30px;
+        margin-bottom: 30px;
+        border: 1px solid var(--border-color);
+    }
+    
+    .episode-hero {
+        display: flex;
+        gap: 30px;
+        align-items: flex-start;
+    }
+    
+    .episode-artwork {
+        flex: 0 0 200px;
+    }
+    
+    .episode-artwork img {
+        width: 100%;
+        height: 200px;
+        object-fit: cover;
+        border-radius: var(--border-radius);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+    
+    .episode-main-info {
+        flex: 1;
+    }
+    
+    .episode-title {
+        font-size: 2rem;
+        margin: 0 0 10px 0;
+        color: var(--text-color);
+        line-height: 1.2;
+    }
+    
+    .show-name {
+        font-size: 1.3rem;
+        margin: 0 0 20px 0;
+        color: var(--primary-color);
+        font-weight: 600;
+    }
+    
+    .episode-meta {
+        display: flex;
+        gap: 20px;
+        margin-bottom: 25px;
+        flex-wrap: wrap;
+    }
+    
+    .episode-meta span {
+        background-color: var(--background-color);
+        padding: 8px 12px;
+        border-radius: 15px;
+        font-size: 0.9rem;
+        color: var(--text-muted);
+        border: 1px solid var(--border-color);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    
+    .episode-actions {
+        display: flex;
+        gap: 15px;
+        flex-wrap: wrap;
+    }
+    
+    .btn-large {
+        padding: 12px 24px;
+        font-size: 1rem;
+        font-weight: 600;
+    }
+    
+    .episode-details {
+        display: flex;
+        flex-direction: column;
+        gap: 30px;
+    }
+    
+    .episode-details > * {
+        min-height: 200px; /* Ensure consistent minimum height for all sections */
+    }
+    
+    .episode-description {
+        background-color: var(--surface-color);
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow);
+        padding: 25px;
+        border: 1px solid var(--border-color);
+    }
+    
+    .episode-description h3 {
+        color: var(--primary-color);
+        margin: 0 0 15px 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .description-content {
+        color: var(--text-color);
+        line-height: 1.6;
+        font-size: 1rem;
+    }
+    
+    .episode-info-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr; /* Equal width columns */
+        gap: 20px;
+        min-height: 200px;
+    }
+    
+    .info-card {
+        background-color: var(--surface-color);
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow);
+        padding: 25px;
+        border: 1px solid var(--border-color);
+        display: flex;
+        flex-direction: column;
+        height: 100%; /* Fill parent height */
+    }
+    
+    .info-card h4 {
+        color: var(--primary-color);
+        margin: 0 0 15px 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 1.1rem;
+    }
+    
+    .info-content p {
+        margin: 8px 0;
+        color: var(--text-color);
+    }
+    
+    .info-content code {
+        background-color: var(--background-color);
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 0.85rem;
+        border: 1px solid var(--border-color);
+    }
+    
+    .episode-id-code {
+        display: inline-block;
+        max-width: 200px;
+        overflow-x: auto;
+        white-space: nowrap;
+        vertical-align: top;
+    }
+    
+    .random-fact {
+        background-color: var(--surface-color);
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow);
+        padding: 25px;
+        border: 1px solid var(--border-color);
+    }
+    
+    .random-fact h3 {
+        color: var(--primary-color);
+        margin: 0 0 15px 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .random-fact blockquote {
+        margin: 0;
+        padding: 15px 20px;
+        background-color: var(--background-color);
+        border-left: 4px solid var(--secondary-color);
+        border-radius: 0 var(--border-radius) var(--border-radius) 0;
+        font-style: italic;
+        color: var(--text-color);
+    }
+    
+    .related-episodes {
+        background-color: var(--surface-color);
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow);
+        padding: 25px;
+        border: 1px solid var(--border-color);
+    }
+    
+    .related-episodes h3 {
+        color: var(--primary-color);
+        margin: 0 0 20px 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .related-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+        gap: 15px;
+    }
+    
+    .related-episode {
+        display: flex;
+        background-color: var(--background-color);
+        border-radius: var(--border-radius);
+        overflow: hidden;
+        border: 1px solid var(--border-color);
+        transition: all 0.3s ease;
+    }
+    
+    .related-episode:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+    
+    .related-artwork {
+        flex: 0 0 60px;
+        height: 60px;
+    }
+    
+    .related-artwork img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    
+    .related-info {
+        flex: 1;
+        padding: 10px 12px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+    
+    .related-info h4 {
+        margin: 0 0 5px 0;
+        font-size: 0.9rem;
+    }
+    
+    .related-info h4 a {
+        color: var(--text-color);
+        text-decoration: none;
+        line-height: 1.3;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+    
+    .related-info h4 a:hover {
+        color: var(--primary-color);
+    }
+    
+    .related-meta {
+        display: flex;
+        gap: 10px;
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-bottom: 5px;
+    }
+    
+    .related-actions {
+        margin-top: auto;
+    }
+    
+    /* Responsive Design */
+    @media (max-width: 768px) {
+        .episode-hero {
+            flex-direction: column;
+            text-align: center;
+        }
+        
+        .episode-artwork {
+            flex: none;
+            align-self: center;
+        }
+        
+        .episode-title {
+            font-size: 1.5rem;
+        }
+        
+        .episode-meta {
+            justify-content: center;
+        }
+        
+        .episode-actions {
+            justify-content: center;
+        }
+        
+        .episode-info-grid {
+            grid-template-columns: 1fr;
+        }
+        
+        .episode-details > * {
+            min-height: auto; /* Remove fixed height on mobile */
+        }
+        
+        .related-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+    
+    @media (max-width: 480px) {
+        .episode-page {
+            padding: 10px;
+        }
+        
+        .episode-header {
+            padding: 20px;
+        }
+        
+        .episode-artwork {
+            flex: 0 0 150px;
+        }
+        
+        .episode-artwork img {
+            height: 150px;
+        }
+        
+        .episode-title {
+            font-size: 1.3rem;
+        }
+        
+        .episode-meta {
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .episode-actions {
+            flex-direction: column;
+        }
+    }
+</style>
+{{ end }}

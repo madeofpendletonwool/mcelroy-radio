@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -95,6 +94,9 @@ func New(cfg *config.Config, fs *storage.FileStore) *Handler {
 				return 0
 			}
 		},
+		"html": func(s string) template.HTML {
+			return template.HTML(s)
+		},
 	}
 
 	// Read all template files
@@ -102,6 +104,7 @@ func New(cfg *config.Config, fs *storage.FileStore) *Handler {
 	homePath := filepath.Join(cfg.TemplatesDir, "pages", "home.html")
 	aboutPath := filepath.Join(cfg.TemplatesDir, "pages", "about.html")
 	directoryPath := filepath.Join(cfg.TemplatesDir, "pages", "directory.html")
+	episodePath := filepath.Join(cfg.TemplatesDir, "pages", "episode.html")
 	analyticsPath := filepath.Join(cfg.TemplatesDir, "pages", "analytics.html")
 
 	log.Printf("Loading templates from paths:")
@@ -109,6 +112,7 @@ func New(cfg *config.Config, fs *storage.FileStore) *Handler {
 	log.Printf("Home: %s", homePath)
 	log.Printf("About: %s", aboutPath)
 	log.Printf("Directory: %s", directoryPath)
+	log.Printf("Episode: %s", episodePath)
 	log.Printf("Analytics: %s", analyticsPath)
 
 	// Check if directory template file exists
@@ -132,6 +136,12 @@ func New(cfg *config.Config, fs *storage.FileStore) *Handler {
 		log.Fatalf("Error parsing directory template: %v", err)
 	}
 
+	// Episode template
+	episodeTemplate, err := template.New("episode").Funcs(funcMap).ParseFiles(layoutPath, episodePath)
+	if err != nil {
+		log.Fatalf("Error parsing episode template: %v", err)
+	}
+
 	// Analytics template
 	analyticsTemplate, err := template.New("analytics").Funcs(funcMap).ParseFiles(layoutPath, analyticsPath)
 	if err != nil {
@@ -143,7 +153,8 @@ func New(cfg *config.Config, fs *storage.FileStore) *Handler {
 		"home":      homeTemplate,
 		"about":     aboutTemplate,
 		"directory": directoryTemplate,
-		"analytics": analyticsTemplate, // Add this line
+		"episode":   episodeTemplate,
+		"analytics": analyticsTemplate,
 	}
 
 	// Debug: Log which templates were loaded
@@ -291,6 +302,64 @@ func (h *Handler) DirectoryPage(w http.ResponseWriter, r *http.Request) {
 	w.Write(buf.Bytes())
 }
 
+// EpisodePage renders a dedicated page for a specific episode
+func (h *Handler) EpisodePage(w http.ResponseWriter, r *http.Request) {
+	episodeID := r.URL.Query().Get("id")
+	if episodeID == "" {
+		http.Error(w, "Episode ID required", http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("Rendering episode page for ID: %s", episodeID)
+
+	h.mu.RLock()
+	episode := h.fileStore.GetEpisodeByID(episodeID)
+	h.mu.RUnlock()
+
+	if episode == nil {
+		http.Error(w, "Episode not found", http.StatusNotFound)
+		return
+	}
+
+	// Get related episodes from the same show (limit to 5)
+	h.mu.RLock()
+	allEpisodes := h.fileStore.GetAllEpisodes()
+	h.mu.RUnlock()
+
+	var relatedEpisodes []*models.Episode
+	for _, ep := range allEpisodes {
+		if ep.ShowName == episode.ShowName && ep.ID != episode.ID {
+			relatedEpisodes = append(relatedEpisodes, ep)
+			if len(relatedEpisodes) >= 5 {
+				break
+			}
+		}
+	}
+
+	// Sort related episodes by date (newest first)
+	sort.Slice(relatedEpisodes, func(i, j int) bool {
+		return relatedEpisodes[i].PublishedAt.After(relatedEpisodes[j].PublishedAt)
+	})
+
+	data := map[string]interface{}{
+		"Title":           episode.Title + " - McElroy Radio",
+		"Episode":         episode,
+		"RelatedEpisodes": relatedEpisodes,
+		"CurrentYear":     time.Now().Year(),
+	}
+
+	var buf bytes.Buffer
+	err := h.templates["episode"].ExecuteTemplate(&buf, "layout.html", data)
+	if err != nil {
+		log.Printf("Template execution error: %v", err)
+		http.Error(w, "Error rendering page", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	w.Write(buf.Bytes())
+}
+
 // EpisodeDetails returns detailed information about a specific episode
 func (h *Handler) EpisodeDetails(w http.ResponseWriter, r *http.Request) {
 	episodeID := r.URL.Query().Get("id")
@@ -312,7 +381,7 @@ func (h *Handler) EpisodeDetails(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(episode)
 }
 
-// DownloadEpisode serves the audio file for download
+// DownloadEpisode redirects to the RSS audio URL for download
 func (h *Handler) DownloadEpisode(w http.ResponseWriter, r *http.Request) {
 	episodeID := r.URL.Query().Get("id")
 	if episodeID == "" {
@@ -363,33 +432,19 @@ func (h *Handler) DownloadEpisode(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Check if file exists
-	if _, err := os.Stat(episode.AudioPath); os.IsNotExist(err) {
-		log.Printf("Episode file not found on disk: %s", episode.AudioPath)
-		http.Error(w, "Episode file not found", http.StatusNotFound)
+	// Get the RSS audio URL (AudioPath now contains the RSS URL)
+	audioURL := episode.AudioPath
+	if audioURL == "" {
+		log.Printf("No audio URL available for episode: %s", episode.Title)
+		http.Error(w, "No audio URL available", http.StatusNotFound)
 		return
 	}
 
-	// Set headers for download
-	filename := filepath.Base(episode.AudioPath)
-	// Clean filename for download (remove problematic characters)
-	safeFilename := strings.ReplaceAll(filename, ":", "_")
-	safeFilename = strings.ReplaceAll(safeFilename, "\"", "_")
+	log.Printf("Redirecting download to RSS URL: %s for episode: %s", audioURL, episode.Title)
 
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", safeFilename))
-	w.Header().Set("Content-Type", "audio/mpeg")
-
-	// Get file size for Content-Length header
-	if stat, err := os.Stat(episode.AudioPath); err == nil {
-		w.Header().Set("Content-Length", strconv.FormatInt(stat.Size(), 10))
-	}
-
-	log.Printf("Starting download of: %s (%s)", episode.Title, filename)
-
-	// Serve the file
-	http.ServeFile(w, r, episode.AudioPath)
-
-	log.Printf("Download completed for: %s", filename)
+	// Use a temporary redirect so the client downloads directly from the RSS host
+	// This ensures the download is tracked by the RSS host
+	http.Redirect(w, r, audioURL, http.StatusTemporaryRedirect)
 }
 
 // parseRange parses HTTP Range header
@@ -460,13 +515,27 @@ func (h *Handler) StreamAudio(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("New audio stream request for station '%s' from %s", stationID, r.RemoteAddr)
 
+	// Check if station exists
+	station := h.stationManager.GetStation(stationID)
+	if station == nil {
+		log.Printf("Station '%s' not found. Available stations:", stationID)
+		allStations := h.stationManager.GetAllStations()
+		for _, s := range allStations {
+			log.Printf("  - %s (%s)", s.Name, s.ID)
+		}
+		http.Error(w, fmt.Sprintf("Station '%s' not found", stationID), http.StatusNotFound)
+		return
+	}
+	log.Printf("Found station: %s with %d episodes", station.Name, len(station.Episodes))
+
 	// Get current episode from the requested station
 	currentEpisode := h.stationManager.GetCurrentEpisode(stationID)
 	if currentEpisode == nil {
-		log.Printf("No current episode available for station: %s", stationID)
+		log.Printf("No current episode available for station: %s (station has %d episodes)", stationID, len(station.Episodes))
 		http.Error(w, "No audio available for this station", http.StatusNotFound)
 		return
 	}
+	log.Printf("Current episode for station %s: %s", stationID, currentEpisode.Title)
 
 	// Get the RSS audio URL (AudioPath now contains the RSS URL)
 	audioURL := currentEpisode.AudioPath
@@ -815,7 +884,7 @@ func (h *Handler) shouldSkipTracking(path string) bool {
 	return false
 }
 
-// NEW: StreamEpisode streams a specific episode from the beginning
+// NEW: StreamEpisode redirects to the RSS audio URL for episode streaming
 func (h *Handler) StreamEpisode(w http.ResponseWriter, r *http.Request) {
 	episodeID := r.URL.Query().Get("id")
 	if episodeID == "" {
@@ -843,129 +912,23 @@ func (h *Handler) StreamEpisode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if file exists
-	if _, err := os.Stat(episode.AudioPath); os.IsNotExist(err) {
-		log.Printf("Episode file not found on disk: %s", episode.AudioPath)
-		http.Error(w, "Episode file not found", http.StatusNotFound)
+	// Get the RSS audio URL (AudioPath now contains the RSS URL)
+	audioURL := episode.AudioPath
+	if audioURL == "" {
+		log.Printf("No audio URL available for episode: %s", episode.Title)
+		http.Error(w, "No audio URL available", http.StatusNotFound)
 		return
 	}
 
-	// Open the file
-	file, err := os.Open(episode.AudioPath)
-	if err != nil {
-		log.Printf("Failed to open audio file: %v", err)
-		http.Error(w, "Audio file not found", http.StatusNotFound)
-		return
-	}
-	defer file.Close()
+	log.Printf("Redirecting episode stream to RSS URL: %s for episode: %s", audioURL, episode.Title)
 
-	// Get file size
-	stat, err := file.Stat()
-	if err != nil {
-		log.Printf("Failed to stat audio file: %v", err)
-		http.Error(w, "Audio file error", http.StatusInternalServerError)
-		return
-	}
-	fileSize := stat.Size()
-
-	// Parse Range header (for seeking during playback)
-	rangeHeader := r.Header.Get("Range")
-	start, end, err := parseRange(rangeHeader, fileSize)
-	if err != nil {
-		log.Printf("Invalid range header: %v", err)
-		http.Error(w, "Invalid range", http.StatusRequestedRangeNotSatisfiable)
-		return
-	}
-
-	// For episode streaming, we always start from the beginning unless there's a range request
-	if rangeHeader == "" {
-		start = 0
-		end = fileSize - 1
-	}
-
-	// Set common headers
-	w.Header().Set("Content-Type", "audio/mpeg")
-	w.Header().Set("Accept-Ranges", "bytes")
-	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-	w.Header().Set("Pragma", "no-cache")
-	w.Header().Set("Expires", "0")
-
-	// Set episode-specific headers for client identification
+	// Set episode-specific headers for client identification before redirect
 	w.Header().Set("X-Episode-ID", episode.ID)
 	w.Header().Set("X-Episode-Title", episode.Title)
 	w.Header().Set("X-Show-Name", episode.ShowName)
 	w.Header().Set("X-Episode-Duration", fmt.Sprintf("%.2f", episode.Duration))
 
-	contentLength := end - start + 1
-
-	if rangeHeader != "" {
-		// Partial content response
-		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, fileSize))
-		w.Header().Set("Content-Length", strconv.FormatInt(contentLength, 10))
-		w.WriteHeader(http.StatusPartialContent)
-		log.Printf("Serving partial episode content: bytes %d-%d/%d for %s", start, end, fileSize, episode.Title)
-	} else {
-		// Full content response
-		w.Header().Set("Content-Length", strconv.FormatInt(contentLength, 10))
-		w.WriteHeader(http.StatusOK)
-		log.Printf("Serving full episode: %s (%s)", episode.Title, episode.ShowName)
-	}
-
-	// Seek to start position
-	if start > 0 {
-		_, err = file.Seek(start, io.SeekStart)
-		if err != nil {
-			log.Printf("Failed to seek in file: %v", err)
-			return
-		}
-	}
-
-	// Create a limited reader to ensure we don't read past the end
-	limitedReader := io.LimitReader(file, contentLength)
-
-	// Stream the content
-	buffer := make([]byte, 32768) // 32KB buffer
-	written := int64(0)
-
-	for written < contentLength {
-		n, err := limitedReader.Read(buffer)
-		if err != nil && err != io.EOF {
-			log.Printf("Error reading file: %v", err)
-			return
-		}
-		if n == 0 {
-			break
-		}
-
-		bytesToWrite := int64(n)
-		if written+bytesToWrite > contentLength {
-			bytesToWrite = contentLength - written
-		}
-
-		_, writeErr := w.Write(buffer[:bytesToWrite])
-		if writeErr != nil {
-			log.Printf("Error writing to client: %v", writeErr)
-			return
-		}
-
-		// Flush immediately for streaming
-		if flusher, ok := w.(http.Flusher); ok {
-			flusher.Flush()
-		}
-
-		written += bytesToWrite
-
-		// Check if client disconnected
-		select {
-		case <-r.Context().Done():
-			log.Printf("Client disconnected during episode streaming")
-			return
-		default:
-		}
-
-		// Small delay to control streaming rate
-		time.Sleep(10 * time.Millisecond)
-	}
-
-	log.Printf("Successfully streamed %d bytes of episode: %s", written, episode.Title)
+	// Use a temporary redirect so the client makes the request to the RSS URL
+	// This ensures the download is tracked by the RSS host
+	http.Redirect(w, r, audioURL, http.StatusTemporaryRedirect)
 }

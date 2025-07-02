@@ -39,6 +39,7 @@ func New(cfg *config.Config) (*http.Server, error) {
 	r.Get("/", h.HomePage)
 	r.Get("/about", h.AboutPage)
 	r.Get("/directory", h.DirectoryPage)
+	r.Get("/episode", h.EpisodePage)
 
 	// Core streaming route - now supports ?station= parameter
 	r.Get("/stream", h.StreamAudio)

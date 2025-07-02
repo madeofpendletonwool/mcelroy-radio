@@ -81,7 +81,9 @@
                             />
                         </div>
                         <div class="episode-info-dir">
-                            <h3 class="episode-title">{{ .Title }}</h3>
+                            <h3 class="episode-title">
+                                <a href="/episode?id={{ .ID }}" class="episode-link">{{ .Title }}</a>
+                            </h3>
                             <div class="episode-meta">
                                 <span class="episode-date"
                                     >{{ formatTime .PublishedAt }}</span
@@ -401,6 +403,17 @@
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
         overflow: hidden;
+    }
+
+    .episode-link {
+        color: inherit;
+        text-decoration: none;
+        transition: color 0.3s ease;
+    }
+
+    .episode-link:hover {
+        color: var(--primary-color);
+        text-decoration: underline;
     }
 
     .episode-meta {

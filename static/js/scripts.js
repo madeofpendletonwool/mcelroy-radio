@@ -52,10 +52,13 @@ class GlobalRadioPlayer {
   }
 
   getSavedStation() {
-    return localStorage.getItem("mcElroyRadioStation");
+    const saved = localStorage.getItem("mcElroyRadioStation");
+    console.log("🎵 getSavedStation() returning:", saved);
+    return saved;
   }
 
   saveStation(stationId) {
+    console.log("🎵 saveStation() saving:", stationId);
     localStorage.setItem("mcElroyRadioStation", stationId);
   }
 
@@ -210,7 +213,11 @@ class GlobalRadioPlayer {
     // Intercept navigation links for client-side routing
     document.addEventListener("click", (e) => {
       const link = e.target.closest("a[href]");
+      if (link) {
+        console.log("🎵 Link clicked:", link.href, "isInternal:", this.isInternalLink(link.href));
+      }
       if (link && this.isInternalLink(link.href)) {
+        console.log("🎵 Intercepting navigation to:", link.href);
         e.preventDefault();
         this.navigateToPage(link.href);
       }
@@ -249,7 +256,7 @@ class GlobalRadioPlayer {
 
   async navigateToPage(url, pushState = true) {
     try {
-      console.log(`🎵 Navigating to: ${url}`);
+      console.log(`🎵 Navigating to: ${url} (client-side navigation)`);
 
       // Show loading state
       this.showNavigationLoading();
@@ -296,6 +303,7 @@ class GlobalRadioPlayer {
     } catch (error) {
       console.error("Navigation failed:", error);
       this.hideNavigationLoading();
+      console.log("🎵 Falling back to full page reload due to navigation error");
       // Fallback to traditional navigation
       window.location.href = url;
     }
@@ -417,7 +425,7 @@ class GlobalRadioPlayer {
   }
 
   // Add this method to your GlobalRadioPlayer class:
-  bindPageSpecificElements() {
+  async bindPageSpecificElements() {
     console.log("🔧 Binding page-specific elements...");
 
     // Rebind page-specific functionality like the random fact button
@@ -451,29 +459,55 @@ class GlobalRadioPlayer {
         this.currentStationId = savedStation;
       }
 
-      if (!this.stationManager) {
-        // Create new station manager with correct station ID
-        console.log("🎵 Creating new StationManager");
-        this.stationManager = new StationManager(this);
-        this.stationManager.init();
-      } else {
-        // REUSE existing station manager - just rebind DOM elements and sync state
-        console.log("🎵 Reusing existing StationManager, rebinding DOM");
+      // Check if audio is already playing - if so, don't interfere with it
+      const isAudioPlaying = this.audioPlayer && this.audioPlayer.src && !this.audioPlayer.paused;
+      
+      console.log("🎵 Navigation state:", {
+        hasStationManager: !!this.stationManager,
+        hasCurrentEpisode: !!this.currentEpisodeId,
+        isAudioPlaying: isAudioPlaying,
+        audioSrc: this.audioPlayer ? !!this.audioPlayer.src : false
+      });
 
-        // Sync station IDs
+      if (!this.stationManager) {
+        // Create new station manager only on first load
+        console.log("🎵 Creating new StationManager (first time only)");
+        this.stationManager = new StationManager(this);
+        
+        // Initialize and ensure proper rendering
+        await this.stationManager.init();
+        
+        // Always fetch episode info on first creation
+        console.log("🎵 First station manager creation - fetching episode info");
+        this.checkForNewEpisode(false);
+        
+        // Force a render in case initial render failed
+        setTimeout(() => {
+          if (this.stationManager && this.stationManager.stations && this.stationManager.stations.length > 0) {
+            const grid = document.getElementById("stations-grid");
+            if (grid && grid.children.length === 0) {
+              console.log("🎵 Force re-rendering stations after delay");
+              this.stationManager.renderStations();
+            }
+          }
+        }, 100);
+      } else {
+        // Always reuse existing station manager during navigation
+        console.log("🎵 Reusing existing StationManager, rebinding DOM only");
+
+        // Sync station IDs if needed
         if (this.stationManager.currentStationId !== savedStation) {
-          console.log(
-            `🎵 SYNC FIX: Correcting StationManager station ID from ${this.stationManager.currentStationId} to ${savedStation}`,
-          );
+          console.log(`🎵 Syncing station ID from ${this.stationManager.currentStationId} to ${savedStation}`);
           this.stationManager.currentStationId = savedStation;
         }
 
         // Rebind DOM elements without full re-initialization
         this.stationManager.rebindDOM();
+        
+        // CRITICAL: Override server-rendered episode info with current station's data
+        console.log("🎵 Navigation: overriding server-rendered episode info with current station");
+        this.stationManager.updateEpisodeInfoForStation(this.currentStationId);
       }
-
-      // Update episode info for current station (non-forced to avoid interrupting playback)
-      this.checkForNewEpisode(false);
     } else {
       console.log("🎵 Not on home page, skipping station manager");
     }
@@ -1059,8 +1093,14 @@ class GlobalRadioPlayer {
 
     this.updateLoadingStatus(this.LoadingStates.FETCHING_POSITION);
 
-    // Get stream info (now returns RSS URL and time offset)
-    fetch("/stream")
+    // Get stream info (now returns RSS URL and time offset) for the current station
+    const streamParams = new URLSearchParams();
+    streamParams.append("station", this.currentStationId);
+    streamParams.append("t", Date.now().toString());
+    const streamUrl = `/stream?${streamParams.toString()}`;
+    console.log("🎵 Initial stream URL:", streamUrl);
+    
+    fetch(streamUrl)
       .then((response) => response.json())
       .then((data) => {
         if (!data.audio_url) {
@@ -1336,8 +1376,14 @@ class GlobalRadioPlayer {
     const wasPlaying = !audioPlayer.paused;
     const streamUrl = `/stream?t=${Date.now()}&station=${stationId}`;
 
-    // Immediate switch
-    audioPlayer.src = streamUrl;
+    // Immediate switch - need to get actual RSS URL
+    fetch(streamUrl)
+      .then(response => response.json())
+      .then(data => {
+        audioPlayer.src = data.audio_url;
+        audioPlayer.load();
+      })
+      .catch(err => console.error("🎵 Fast switch failed:", err));
 
     if (wasPlaying) {
       // Try to resume immediately
@@ -1397,8 +1443,14 @@ class GlobalRadioPlayer {
       return;
     }
 
-    // Simple approach: just set source and play if needed
-    audioPlayer.src = streamUrl;
+    // Simple approach: get RSS URL and set source
+    fetch(streamUrl)
+      .then(response => response.json())
+      .then(data => {
+        audioPlayer.src = data.audio_url;
+        audioPlayer.load();
+      })
+      .catch(err => console.error("🎵 Fallback switch failed:", err));
 
     // *** IMMEDIATE episode info update in fallback too ***
     this.forceEpisodeInfoUpdate();
@@ -1535,10 +1587,16 @@ class GlobalRadioPlayer {
           forceUpdate || (data.id && data.id !== this.currentEpisodeId);
 
         if (shouldUpdate) {
-          if (data.id !== this.currentEpisodeId) {
+          const previousEpisodeId = this.currentEpisodeId;
+          const isNewEpisode = data.id !== this.currentEpisodeId;
+          const isFirstFetch = this.currentEpisodeId === null;
+          
+          if (isNewEpisode && !isFirstFetch) {
             console.log("🎵 New episode detected:", data.title);
           } else if (forceUpdate) {
             console.log("🎵 Forced update - refreshing episode display");
+          } else if (isFirstFetch) {
+            console.log("🎵 First episode fetch - updating UI only, keeping audio");
           }
 
           this.currentEpisodeId = data.id;
@@ -1546,14 +1604,20 @@ class GlobalRadioPlayer {
           this.updateMediaSessionMetadata(data);
 
           // Check if we need to load a new RSS URL for this episode
-          if (
-            !this.audioPlayer.src.includes(data.id) ||
-            this.audioPlayer.src === ""
-          ) {
+          // Only reload if we have no audio source OR if this is genuinely a new episode (not just first fetch)
+          const hasNoAudioSource = !this.audioPlayer.src || this.audioPlayer.src === "";
+          const shouldReloadAudio = hasNoAudioSource || (isNewEpisode && !isFirstFetch);
+          
+          if (shouldReloadAudio) {
             console.log("Loading new episode RSS URL");
 
-            // Get the new episode's RSS URL
-            fetch("/stream")
+            // Get the new episode's RSS URL for the current station
+            const streamParams = new URLSearchParams();
+            streamParams.append("station", this.currentStationId);
+            streamParams.append("t", Date.now().toString());
+            const streamUrl = `/stream?${streamParams.toString()}`;
+            
+            fetch(streamUrl)
               .then((response) => response.json())
               .then((streamData) => {
                 if (streamData.audio_url) {
@@ -2065,8 +2129,29 @@ function updateQuoteBox() {
 let globalRadioPlayer = null;
 
 // FINALLY, update the initGlobalRadioPlayer function to ensure proper instance management:
-function initGlobalRadioPlayer() {
+async function initGlobalRadioPlayer() {
+  // CRITICAL: If player already exists, do nothing - this prevents double initialization
+  if (window.globalRadioPlayer && window.globalRadioPlayer instanceof GlobalRadioPlayer) {
+    console.log("🎵 Global player already exists, skipping initialization");
+    return;
+  }
+
   console.log("🎵 Initializing Global Radio Player");
+  console.log("🎵 Debug - Current window.globalRadioPlayer:", {
+    exists: !!window.globalRadioPlayer,
+    type: window.globalRadioPlayer ? typeof window.globalRadioPlayer : 'undefined',
+    constructor: window.globalRadioPlayer ? window.globalRadioPlayer.constructor.name : 'none',
+    isInstance: window.globalRadioPlayer instanceof GlobalRadioPlayer,
+    hasBackup: !!window.radioPlayerBackup,
+    backupIsValid: window.radioPlayerBackup instanceof GlobalRadioPlayer
+  });
+
+  // Check backup if main reference is lost
+  if (!window.globalRadioPlayer && window.radioPlayerBackup && window.radioPlayerBackup instanceof GlobalRadioPlayer) {
+    console.log("🎵 Restoring from backup reference");
+    window.globalRadioPlayer = window.radioPlayerBackup;
+    return;
+  }
 
   // If we already have a global instance, just rebind UI
   if (
@@ -2079,11 +2164,27 @@ function initGlobalRadioPlayer() {
     // Just rebind UI elements and sync state - don't recreate everything
     globalRadioPlayer.bindElements();
     globalRadioPlayer.setupEventListeners();
+    globalRadioPlayer.setupNavigationHandling(); // Ensure navigation handling is always set up
     globalRadioPlayer.syncUIWithAudioState();
     globalRadioPlayer.setStreamReady(true);
 
     // Rebind page-specific elements - this is where StationManager gets created
-    globalRadioPlayer.bindPageSpecificElements();
+    await globalRadioPlayer.bindPageSpecificElements();
+    return;
+  }
+
+  // Check if we have a global player reference but window reference is lost
+  if (globalRadioPlayer && globalRadioPlayer instanceof GlobalRadioPlayer) {
+    console.log("🎵 Restoring lost window reference to existing global player");
+    window.globalRadioPlayer = globalRadioPlayer;
+    
+    // Just rebind UI elements
+    globalRadioPlayer.bindElements();
+    globalRadioPlayer.setupEventListeners();
+    globalRadioPlayer.setupNavigationHandling();
+    globalRadioPlayer.syncUIWithAudioState();
+    globalRadioPlayer.setStreamReady(true);
+    await globalRadioPlayer.bindPageSpecificElements();
     return;
   }
 
@@ -2091,9 +2192,17 @@ function initGlobalRadioPlayer() {
   console.log("🎵 Creating new global player instance");
   globalRadioPlayer = new GlobalRadioPlayer();
   globalRadioPlayer.init();
+  
+  // CRITICAL: Also bind page-specific elements on initial load
+  await globalRadioPlayer.bindPageSpecificElements();
 
   // CRITICAL: Store the instance globally so it persists across page navigation
   window.globalRadioPlayer = globalRadioPlayer;
+  
+  // Additional protection: store reference in multiple places
+  if (!window.radioPlayerBackup) {
+    window.radioPlayerBackup = globalRadioPlayer;
+  }
 
   console.log("🎵 Global player instance stored:", {
     stored: !!window.globalRadioPlayer,
@@ -2161,6 +2270,11 @@ function updateRadioQuote() {
 
 class StationManager {
   constructor(globalRadioPlayer) {
+    console.log("🎵 StationManager constructor called with:", {
+      hasGlobalPlayer: !!globalRadioPlayer,
+      playerType: globalRadioPlayer ? globalRadioPlayer.constructor.name : 'none',
+      stackTrace: new Error().stack.split('\n').slice(1, 4).join('\n')
+    });
     this.globalRadioPlayer = globalRadioPlayer;
     this.stations = [];
 
@@ -2266,17 +2380,29 @@ class StationManager {
       return;
     }
 
+    if (!this.stations || this.stations.length === 0) {
+      console.log("🎵 No stations data to render");
+      return;
+    }
+
     console.log("🎵 Rendering", this.stations.length, "stations");
+    console.log("🎵 Current station ID:", this.currentStationId);
 
     this.stationsGrid.innerHTML = "";
 
     this.stations.forEach((station) => {
       console.log("🎵 Creating card for station:", station.name);
       const stationCard = this.createStationCard(station);
-      this.stationsGrid.appendChild(stationCard);
+      if (stationCard) {
+        this.stationsGrid.appendChild(stationCard);
+      } else {
+        console.error("🎵 Failed to create station card for:", station.name);
+      }
     });
 
+    // Always update current station display after rendering
     this.updateCurrentStationDisplay();
+    console.log("🎵 Station rendering complete");
   }
 
   createStationCard(station) {
@@ -2388,37 +2514,30 @@ class StationManager {
     const currentMuted = audioPlayer.muted;
 
     try {
-      // FIX 8: Properly construct position URL with station parameter
-      const positionParams = new URLSearchParams();
-      positionParams.append("station", stationId);
-      positionParams.append("t", Date.now().toString());
-      const positionUrl = `/stream-position?${positionParams.toString()}`;
-
-      console.log("🎵 Getting station position from server:", positionUrl);
-      const positionResponse = await fetch(positionUrl);
-      if (!positionResponse.ok) {
-        throw new Error(
-          `Failed to get station position: ${positionResponse.status}`,
-        );
-      }
-
-      const positionData = await positionResponse.json();
-      const serverTimePosition = positionData.time_position || 0;
-      console.log(
-        `🎵 Station ${stationId} server position: ${serverTimePosition}s`,
-      );
-
       // Stop current playback
       if (!audioPlayer.paused) {
         audioPlayer.pause();
       }
 
-      // FIX 9: Create proper stream URL with station parameter
+      // FIX: Get stream URL with station parameter
       const streamParams = new URLSearchParams();
       streamParams.append("station", stationId);
       streamParams.append("t", Date.now().toString());
       const streamUrl = `/stream?${streamParams.toString()}`;
-      console.log("🎵 New station stream URL:", streamUrl);
+      console.log("🎵 Getting station stream info from:", streamUrl);
+
+      // Get the station stream info (JSON response with RSS URL)
+      const streamResponse = await fetch(streamUrl);
+      if (!streamResponse.ok) {
+        throw new Error(`Failed to get stream info: ${streamResponse.status}`);
+      }
+      
+      const streamData = await streamResponse.json();
+      const actualAudioUrl = streamData.audio_url;
+      const serverTimePosition = streamData.time_offset || 0;
+      
+      console.log("🎵 Got station audio URL:", actualAudioUrl);
+      console.log("🎵 Station time position:", serverTimePosition);
 
       // Set up event handlers for the new stream
       const onLoadedMetadata = () => {
@@ -2521,8 +2640,8 @@ class StationManager {
       });
       audioPlayer.addEventListener("error", onError, { once: true });
 
-      // Switch to new stream
-      audioPlayer.src = streamUrl;
+      // Switch to the actual RSS audio URL
+      audioPlayer.src = actualAudioUrl;
       audioPlayer.load();
     } catch (error) {
       console.error("🎵 Exception during station switch:", error);
@@ -2638,30 +2757,41 @@ class StationManager {
     }
   }
 
+  rebindDOM() {
+    console.log("🎵 Rebinding DOM elements for Station Manager");
+    
+    // Re-establish DOM references
+    this.stationsGrid = document.getElementById("stations-grid");
+    this.currentStationName = document.getElementById("current-station-name");
+    
+    if (!this.stationsGrid) {
+      console.log("🎵 Station grid not found, not on home page");
+      return;
+    }
+    
+    // Only re-render if we have stations data, otherwise render will be empty
+    if (this.stations && this.stations.length > 0) {
+      console.log("🎵 Re-rendering existing stations without fetching new data");
+      this.renderStations();
+    } else {
+      console.log("🎵 No existing stations data, skipping render during rebind");
+    }
+    
+    console.log("🎵 DOM rebinding complete");
+  }
+
   startStationSync() {
     // Periodically refresh station list (but don't change current station)
-    setInterval(async () => {
-      await this.loadStations();
-      this.updateCurrentStationDisplay();
-    }, 60000); // Every minute
+    // DISABLED: This was causing episode info conflicts during playback
+    // setInterval(async () => {
+    //   await this.loadStations();
+    //   this.updateCurrentStationDisplay();
+    // }, 60000); // Every minute
+    console.log("🎵 Station sync disabled to prevent episode conflicts");
   }
 }
 
-// Update the bindPageSpecificElements method in GlobalRadioPlayer to include station manager
-// Add this to the bindPageSpecificElements method:
-
-// IN YOUR EXISTING bindPageSpecificElements method, ADD THIS:
-
-// Station Manager initialization for home page
-if (document.getElementById("stations-grid")) {
-  console.log("🎵 Home page detected, initializing station manager");
-  if (!this.stationManager) {
-    this.stationManager = new StationManager(this);
-  }
-  this.stationManager.init();
-} else {
-  console.log("🎵 Not on home page, skipping station manager");
-}
+// Note: Station Manager initialization is now handled in bindPageSpecificElements method above
 
 // Theme Management System
 class ThemeManager {

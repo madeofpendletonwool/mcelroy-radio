@@ -2952,7 +2952,6 @@ header,
 .fullscreen-progress-section {
     padding: 0 20px 24px 20px;
     width: 100%;
-    max-width: 600px;
     flex-shrink: 0;
 }
 
@@ -3342,24 +3341,24 @@ header,
 @media (min-width: 900px) {
     /* Use the same great mobile styles, just with larger artwork */
     .fullscreen-artwork-container {
-        width: 350px !important;
-        height: 350px !important;
-        min-width: 350px !important;
-        min-height: 350px !important;
-        max-width: 350px !important;
-        max-height: 350px !important;
+        width: min(320px, 80vw) !important;
+        height: min(320px, 80vw) !important;
+        min-width: min(320px, 80vw) !important;
+        min-height: min(320px, 80vw) !important;
+        max-width: min(320px, 80vw) !important;
+        max-height: min(320px, 80vw) !important;
         border-radius: 20px !important;
         overflow: hidden !important;
         box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3) !important;
     }
     
     #fullscreen-episode-cover {
-        width: 350px !important;
-        height: 350px !important;
-        min-width: 350px !important;
-        min-height: 350px !important;
-        max-width: 350px !important;
-        max-height: 350px !important;
+        width: min(320px, 80vw) !important;
+        height: min(320px, 80vw) !important;
+        min-width: min(320px, 80vw) !important;
+        min-height: min(320px, 80vw) !important;
+        max-width: min(320px, 80vw) !important;
+        max-height: min(320px, 80vw) !important;
         border-radius: 20px !important;
     }
     
@@ -3400,12 +3399,28 @@ header,
         font-size: 28px !important;
     }
     
+    .fullscreen-progress-section {
+        padding: 0 40px 24px 40px !important;
+        width: 100% !important;
+        max-width: none !important;
+    }
+    
     .fullscreen-progress-bar {
         height: 8px !important;
         margin-bottom: 16px !important;
+        width: 100% !important;
+        max-width: none !important;
     }
     
     .fullscreen-time-info {
         font-size: 1.1rem !important;
+    }
+    
+    .fullscreen-description-section {
+        margin: 0 40px !important;
+    }
+    
+    .fullscreen-fact-section {
+        margin: 20px 40px 0 40px !important;
     }
 }

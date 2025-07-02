@@ -178,9 +178,10 @@ func (m *Manager) checkStationProgress(stationID string) {
 	if station.CurrentEpisode.Duration > 0 && playingTime >= station.CurrentEpisode.Duration {
 		log.Printf("Station %s episode finished, advancing", station.Name)
 		m.advanceStationEpisode(station)
+		return // Exit early since we just reset the episode
 	}
 
-	// Update position
+	// Update stored position for consistency (though real-time calculation is used in getters)
 	station.TimePosition = playingTime
 	bytesPerSecond := int64(16000) // Rough estimate for MP3
 	station.CurrentPosition = int64(playingTime * float64(bytesPerSecond))
@@ -387,10 +388,20 @@ func (m *Manager) GetCurrentTimePosition(stationID string) float64 {
 		station = m.stations["all"]
 	}
 
-	if station == nil {
+	if station == nil || station.CurrentEpisode == nil {
 		return 0
 	}
-	return station.TimePosition
+
+	// Calculate current time position based on when episode started
+	currentTime := time.Since(station.EpisodeStartTime).Seconds()
+	
+	// If episode has a duration and we've exceeded it, wrap to next episode timing
+	if station.CurrentEpisode.Duration > 0 && currentTime >= station.CurrentEpisode.Duration {
+		// Episode should have advanced - return position within current episode
+		return currentTime - (float64(int(currentTime/station.CurrentEpisode.Duration)) * station.CurrentEpisode.Duration)
+	}
+	
+	return currentTime
 }
 
 // GetCurrentPosition returns current byte position for a specific station
@@ -407,10 +418,22 @@ func (m *Manager) GetCurrentPosition(stationID string) int64 {
 		station = m.stations["all"]
 	}
 
-	if station == nil {
+	if station == nil || station.CurrentEpisode == nil {
 		return 0
 	}
-	return station.CurrentPosition
+
+	// Calculate current time position based on when episode started
+	currentTime := time.Since(station.EpisodeStartTime).Seconds()
+	
+	// If episode has a duration and we've exceeded it, wrap to next episode timing
+	if station.CurrentEpisode.Duration > 0 && currentTime >= station.CurrentEpisode.Duration {
+		// Episode should have advanced - return position within current episode
+		currentTime = currentTime - (float64(int(currentTime/station.CurrentEpisode.Duration)) * station.CurrentEpisode.Duration)
+	}
+
+	// Calculate current byte position based on real time
+	bytesPerSecond := int64(16000) // Rough estimate for MP3
+	return int64(currentTime * float64(bytesPerSecond))
 }
 
 // GetRecentlyPlayed returns recently played episodes from a specific station

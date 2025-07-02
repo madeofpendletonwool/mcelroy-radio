@@ -404,15 +404,15 @@
         <script>
             // Initialize theme system when DOM is ready
             // Initialize theme system when DOM is ready
-            document.addEventListener("DOMContentLoaded", function () {
+            document.addEventListener("DOMContentLoaded", async function () {
                 // Initialize theme system
                 if (typeof initThemeSystem === "function") {
                     initThemeSystem();
                 }
 
-                // CRITICAL: Always initialize global radio player on every page
+                // Initialize global radio player - but NEVER if we're in client-side navigation
                 if (typeof initGlobalRadioPlayer === "function") {
-                    initGlobalRadioPlayer();
+                    await initGlobalRadioPlayer();
                 }
 
                 // Add a small delay to ensure theme is applied before other initialization
