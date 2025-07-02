@@ -2,15 +2,16 @@
 
 ## About
 
-McElroy Radio is a fun personal project that creates an internet radio-style experience for fans of the McElroy family's podcasts. The application continuously plays episodes from a collection of audio files, serving them as a radio stream to listeners.
+McElroy Radio is a fun personal project that creates an internet radio-style experience for fans of the McElroy family's podcasts. The application continuously plays episodes by parsing RSS feeds and directing users to stream directly from the original sources, ensuring proper download tracking for the creators.
 
 Check it out now at https://mcelroyradio.com
 
 Key features:
-- 24/7 streaming of podcast episodes
-- Continuous playback regardless of whether users are connected
+- 24/7 streaming experience using RSS feeds
+- Continuous playback with radio-style synchronization
 - Recently played history
 - Random McElroy fun facts
+- Direct streaming from RSS sources (respects creator analytics)
 - Docker containerization for easy deployment
 
 ## Getting Started
@@ -42,7 +43,7 @@ Key features:
 
 ### Running with Docker
 
-1. Update the volume paths in `docker-compose.yml` to point to your podcast collections.
+1. Configure RSS feeds by setting the `RSS_FEEDS` environment variable in `docker-compose.yml`.
 
 2. Run the startup script:
    ```
@@ -55,34 +56,26 @@ Key features:
    ./startup.sh --logs
    ```
 
-### Directory Structure for Audio Files
+### RSS Feed Configuration
 
-The application expects a specific directory structure for the audio files:
+The application now streams directly from RSS feeds instead of hosting files locally. Configure your RSS feeds using the `RSS_FEEDS` environment variable:
 
-```
-/opt/mcelroy-content/
-  ├── show1/        # e.g., MBMBAM episodes
-  │   ├── episode1.mp3
-  │   ├── episode2.mp3
-  │   └── ...
-  ├── show2/        # e.g., The Adventure Zone episodes
-  │   ├── episode1.mp3
-  │   ├── episode2.mp3
-  │   └── ...
-  └── show3/        # e.g., Sawbones episodes
-      ├── episode1.mp3
-      ├── episode2.mp3
-      └── ...
+```bash
+export RSS_FEEDS="My Brother My Brother and Me:https://feeds.simplecast.com/wjQvV_54,The Adventure Zone:https://feeds.simplecast.com/cYQVV__c,Sawbones:https://feeds.simplecast.com/y1N13_qC"
 ```
 
-The directories are mounted in the Docker container, so you can update your collection without rebuilding the image.
+This approach ensures:
+- Download tracking works properly for creators
+- No local storage of copyrighted content
+- Real-time access to new episodes
+- Reduced server bandwidth requirements
 
 ## Configuration
 
 You can configure the application through environment variables:
 
 - `PORT`: The port to listen on (default: `8080`)
-- `CONTENT_DIRS`: Comma-separated list of content directories (default: `/opt/mcelroy-content/show1,/opt/mcelroy-content/show2,/opt/mcelroy-content/show3`)
+- `RSS_FEEDS`: Comma-separated list of RSS feeds in format "ShowName:URL" (e.g., "MBMBAM:https://feeds.simplecast.com/wjQvV_54,TAZ:https://feeds.simplecast.com/cYQVV__c")
 
 ## Development
 

@@ -9,21 +9,15 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      # Mount the location of the audio files - uncomment and adjust paths as needed
-      - /home/user/mcelroy-radio/mbmbam:/opt/mcelroy-content/show1
-      - /home/user/mcelroy-radio/adventure-zone:/opt/mcelroy-content/show2
-      - /home/user/mcelroy-radio/sawbones:/opt/mcelroy-content/show3
-      # Mount cache directory for metadata persistence (speeds up subsequent scans dramatically)
-      - ./cache:/opt/mcelroy-content/cache
-      - ./covers:/app/static/img/covers
-
       # Mount config directory for custom station configurations
       - ./config:/opt/mcelroy-content/config
+      # Mount static files for development (CSS/JS updates without rebuild)
+      - ./static:/app/static
+      - ./templates:/app/templates
     environment:
       - PORT=8080
-      - ANALYTICS_PASSWORD="mcelroyradio"
-      # Optionally customize content directories
-      # - CONTENT_DIRS=/opt/mcelroy-content/show1,/opt/mcelroy-content/show2,/opt/mcelroy-content/show3
+      - RSS_FEEDS=My Brother My Brother and Me:https://feeds.simplecast.com/wjQvYtdl,The Adventure Zone:https://feeds.simplecast.com/cYQVc__c,Run A Doctor Who Fancast:https://rundw.libsyn.com/rss,The McElroy Brothers Will Be In Trolls World Tour:https://trolls2.libsyn.com/rss,Trends Like These:https://trendslikethese.libsyn.com/rss,CoolGames Inc:https://feeds.megaphone.fm/coolgames-inc,The Kind Rewind:https://thekindrewind.libsyn.com/rss,The Empty Bowl:https://anchor.fm/s/6ccfb04/podcast/rss,Interrobang with Travis and Tybee:https://interrobangcast.libsyn.com/rss,Wonderful:https://feeds.simplecast.com/w1teXNny,Bake On:https://feeds.simplecast.com/Rhhgs26M,Still Buffering:https://feeds.simplecast.com/n8ppsCKR,Sawbones:https://feeds.simplecast.com/y1LF_sn2,Shmanners:https://feeds.simplecast.com/rRcaqFt4,Surprisingly Nice:https://surprisinglynice.libsyn.com/rss,The Besties:https://feeds.simplecast.com/Urk3897_,Quality Control:https://feeds.megaphone.fm/qualitycontrol,Til Death Do Us Blart:https://feeds.acast.com/public/shows/66e25e2a9a7dcc160e7c1211,Positiviteeny:https://anchor.fm/s/67f70a0/podcast/rss,Bullseye with Jesse Thorn:https://feeds.npr.org/510309/podcast.xml,Secretly Incredibly Fascinating:https://feeds.simplecast.com/_WI4mhWl,Fast and Furious and Justin and Sydnee:https://feeds.simplecast.com/OAsA7G6V,Bad Vibes:https://feeds.megaphone.fm/QCD5976088508,Neat! The Boozcast:https://audioboom.com/channels/5042841.rss
+      - ANALYTICS_PASSWORD=mcelroyradio
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/"]
       interval: 30s

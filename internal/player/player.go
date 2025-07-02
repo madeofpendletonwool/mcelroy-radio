@@ -36,7 +36,55 @@ func New(fileStore *storage.FileStore) (*RadioPlayer, error) {
 	return player, nil
 }
 
-// GetCurrentPosition returns estimated position (compatibility)
+// episodeProgressLoop manages episode transitions based on timing
+func (p *RadioPlayer) episodeProgressLoop() {
+	ticker := time.NewTicker(5 * time.Second) // Check every 5 seconds
+	defer ticker.Stop()
+
+	for {
+		<-ticker.C
+		p.checkEpisodeProgress()
+	}
+}
+
+// checkEpisodeProgress checks if we need to advance to the next episode
+func (p *RadioPlayer) checkEpisodeProgress() {
+	episode := p.fileStore.GetCurrentEpisode()
+	if episode == nil {
+		return
+	}
+
+	p.playbackMutex.Lock()
+	defer p.playbackMutex.Unlock()
+
+	// Check if this is a new episode
+	if p.currentEpisodeID != episode.ID {
+		log.Printf("Starting new episode: %s", episode.Title)
+		p.currentEpisodeID = episode.ID
+		p.episodeStartTime = time.Now()
+		p.episodeDuration = episode.Duration
+		p.currentPosition = 0
+		p.isPlaying = true
+		return
+	}
+
+	// Calculate how long this episode has been playing
+	playingTime := time.Since(p.episodeStartTime).Seconds()
+
+	// If the episode duration is known and we've played past it, advance to next
+	if p.episodeDuration > 0 && playingTime >= p.episodeDuration {
+		log.Printf("Episode finished after %.2f seconds, advancing to next", playingTime)
+		p.fileStore.AdvanceToNextEpisode()
+		return
+	}
+
+	// Update current position based on elapsed time
+	// Since we're now using RSS URLs, position tracking is handled by the client
+	// We'll track time-based position instead of bytes
+	p.currentPosition = int64(playingTime)
+}
+
+// GetCurrentPosition returns the current playback position in bytes (estimated)
 func (p *RadioPlayer) GetCurrentPosition() int64 {
 	p.playbackMutex.RLock()
 	defer p.playbackMutex.RUnlock()

@@ -236,12 +236,11 @@
             </div>
 
             <div class="show-card hidden-initially">
-                <div class="show-image bunker-buddies"></div>
-                <h3>Bunker Buddies</h3>
-                <p>
-                    Travis McElroy and co-hosts discuss survival tactics and
-                    scenarios, blending humor with practical advice.
-                </p>
+                <div
+                    class="show-image fast-and-furious-with-justin-and-sydnee"
+                ></div>
+                <h3>Fast and Furious and Justin and Sydnee</h3>
+                <p>This is a podcast about family.</p>
             </div>
 
             <div class="show-card hidden-initially">
@@ -1007,111 +1006,5 @@
     }
 </style>
 
-<script>
-    document.addEventListener("DOMContentLoaded", function () {
-        // Randomize show cards on page load
-        randomizeShowCards();
-
-        // Setup show more functionality
-        setupShowMoreButton();
-    });
-
-    function randomizeShowCards() {
-        const showsGrid = document.querySelector(".shows-grid");
-        if (!showsGrid) return;
-
-        const allShowCards = Array.from(showsGrid.children);
-
-        // Shuffle the array using Fisher-Yates algorithm
-        for (let i = allShowCards.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [allShowCards[i], allShowCards[j]] = [
-                allShowCards[j],
-                allShowCards[i],
-            ];
-        }
-
-        // Clear the grid and re-append in random order
-        showsGrid.innerHTML = "";
-
-        // Show first 6 cards, hide the rest
-        allShowCards.forEach((card, index) => {
-            if (index < 6) {
-                card.classList.remove("hidden-initially");
-            } else {
-                card.classList.add("hidden-initially");
-            }
-            showsGrid.appendChild(card);
-        });
-
-        // Update the show count
-        updateShowCount();
-    }
-
-    function setupShowMoreButton() {
-        const showMoreBtn = document.getElementById("show-more-btn");
-        if (!showMoreBtn) return;
-
-        let isExpanded = false;
-
-        showMoreBtn.addEventListener("click", function () {
-            const hiddenCards = document.querySelectorAll(
-                ".show-card.hidden-initially",
-            );
-
-            if (!isExpanded) {
-                // Show all hidden cards with animation
-                hiddenCards.forEach((card, index) => {
-                    setTimeout(() => {
-                        card.classList.remove("hidden-initially");
-                        card.classList.add("revealed");
-                    }, index * 100); // Stagger animation
-                });
-
-                // Update button text and icon
-                showMoreBtn.innerHTML = `
-                <i class="fas fa-chevron-up"></i>
-                <span>Show Fewer Shows</span>
-            `;
-                showMoreBtn.classList.add("expanded");
-                isExpanded = true;
-            } else {
-                // Hide cards again
-                const revealedCards = document.querySelectorAll(
-                    ".show-card.revealed",
-                );
-                revealedCards.forEach((card) => {
-                    card.classList.add("hidden-initially");
-                    card.classList.remove("revealed");
-                });
-
-                // Update button text and icon
-                updateShowCount();
-                showMoreBtn.classList.remove("expanded");
-                isExpanded = false;
-
-                // Scroll back to shows section
-                document.querySelector(".shows-section h2").scrollIntoView({
-                    behavior: "smooth",
-                    block: "start",
-                });
-            }
-        });
-    }
-
-    function updateShowCount() {
-        const showMoreBtn = document.getElementById("show-more-btn");
-        const hiddenCards = document.querySelectorAll(
-            ".show-card.hidden-initially",
-        );
-
-        if (showMoreBtn && hiddenCards.length > 0) {
-            showMoreBtn.innerHTML = `
-            <i class="fas fa-chevron-down"></i>
-            <span>Show More Shows</span>
-            <span class="show-count">(${hiddenCards.length} more)</span>
-        `;
-        }
-    }
-</script>
+<!-- Show more functionality moved to scripts.js -->
 {{ end }}

@@ -23,6 +23,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main cmd/server/m
 FROM alpine:latest
 
 # Install runtime dependencies including ffmpeg for metadata parsing
+RUN apk update
 RUN apk add --no-cache \
     ca-certificates \
     ffmpeg \

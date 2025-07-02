@@ -89,7 +89,7 @@
             <div class="station-badge">
                 <i class="fas fa-broadcast-tower"></i>
                 <span>Currently tuned to:</span>
-                <strong id="current-station-name">All Shows</strong>
+                <strong id="current-station-name">Loading...</strong>
             </div>
         </div>
     </section>
@@ -122,7 +122,7 @@
         <h2><i class="fas fa-history"></i> Recently Played</h2>
         <div class="episode-grid">
             {{ if .RecentEpisodes }} {{ range .RecentEpisodes }}
-            <div class="episode-card small">
+            <a href="/episode?id={{ .ID }}" class="episode-card small episode-link-card">
                 <div class="episode-image">
                     <img
                         src="{{ .ImagePath }}"
@@ -139,7 +139,7 @@
                         >
                     </p>
                 </div>
-            </div>
+            </a>
             {{ end }} {{ else }}
             <p>No recently played episodes yet. Stay tuned!</p>
             {{ end }}
@@ -365,6 +365,33 @@
 
     .station-card[data-station-type="custom"] .station-icon {
         color: var(--accent-color);
+    }
+
+    /* Episode Link Card Styles */
+    .episode-link-card {
+        color: inherit;
+        text-decoration: none;
+        display: block;
+        transition: all 0.3s ease;
+    }
+
+    .episode-link-card:hover {
+        color: inherit;
+        text-decoration: none;
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+    }
+
+    .episode-link-card:hover .episode-details h4 {
+        color: var(--primary-color);
+    }
+
+    .episode-link-card .episode-image img {
+        transition: transform 0.3s ease;
+    }
+
+    .episode-link-card:hover .episode-image img {
+        transform: scale(1.05);
     }
 
     /* Mobile responsiveness */

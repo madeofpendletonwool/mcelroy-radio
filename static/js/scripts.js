@@ -52,10 +52,13 @@ class GlobalRadioPlayer {
   }
 
   getSavedStation() {
-    return localStorage.getItem("mcElroyRadioStation");
+    const saved = localStorage.getItem("mcElroyRadioStation");
+    console.log("🎵 getSavedStation() returning:", saved);
+    return saved;
   }
 
   saveStation(stationId) {
+    console.log("🎵 saveStation() saving:", stationId);
     localStorage.setItem("mcElroyRadioStation", stationId);
   }
 
@@ -210,7 +213,11 @@ class GlobalRadioPlayer {
     // Intercept navigation links for client-side routing
     document.addEventListener("click", (e) => {
       const link = e.target.closest("a[href]");
+      if (link) {
+        console.log("🎵 Link clicked:", link.href, "isInternal:", this.isInternalLink(link.href));
+      }
       if (link && this.isInternalLink(link.href)) {
+        console.log("🎵 Intercepting navigation to:", link.href);
         e.preventDefault();
         this.navigateToPage(link.href);
       }
@@ -249,7 +256,7 @@ class GlobalRadioPlayer {
 
   async navigateToPage(url, pushState = true) {
     try {
-      console.log(`🎵 Navigating to: ${url}`);
+      console.log(`🎵 Navigating to: ${url} (client-side navigation)`);
 
       // Show loading state
       this.showNavigationLoading();
@@ -296,6 +303,7 @@ class GlobalRadioPlayer {
     } catch (error) {
       console.error("Navigation failed:", error);
       this.hideNavigationLoading();
+      console.log("🎵 Falling back to full page reload due to navigation error");
       // Fallback to traditional navigation
       window.location.href = url;
     }
@@ -417,7 +425,7 @@ class GlobalRadioPlayer {
   }
 
   // Add this method to your GlobalRadioPlayer class:
-  bindPageSpecificElements() {
+  async bindPageSpecificElements() {
     console.log("🔧 Binding page-specific elements...");
 
     // Rebind page-specific functionality like the random fact button
@@ -451,29 +459,55 @@ class GlobalRadioPlayer {
         this.currentStationId = savedStation;
       }
 
-      if (!this.stationManager) {
-        // Create new station manager with correct station ID
-        console.log("🎵 Creating new StationManager");
-        this.stationManager = new StationManager(this);
-        this.stationManager.init();
-      } else {
-        // REUSE existing station manager - just rebind DOM elements and sync state
-        console.log("🎵 Reusing existing StationManager, rebinding DOM");
+      // Check if audio is already playing - if so, don't interfere with it
+      const isAudioPlaying = this.audioPlayer && this.audioPlayer.src && !this.audioPlayer.paused;
+      
+      console.log("🎵 Navigation state:", {
+        hasStationManager: !!this.stationManager,
+        hasCurrentEpisode: !!this.currentEpisodeId,
+        isAudioPlaying: isAudioPlaying,
+        audioSrc: this.audioPlayer ? !!this.audioPlayer.src : false
+      });
 
-        // Sync station IDs
+      if (!this.stationManager) {
+        // Create new station manager only on first load
+        console.log("🎵 Creating new StationManager (first time only)");
+        this.stationManager = new StationManager(this);
+        
+        // Initialize and ensure proper rendering
+        await this.stationManager.init();
+        
+        // Always fetch episode info on first creation
+        console.log("🎵 First station manager creation - fetching episode info");
+        this.checkForNewEpisode(false);
+        
+        // Force a render in case initial render failed
+        setTimeout(() => {
+          if (this.stationManager && this.stationManager.stations && this.stationManager.stations.length > 0) {
+            const grid = document.getElementById("stations-grid");
+            if (grid && grid.children.length === 0) {
+              console.log("🎵 Force re-rendering stations after delay");
+              this.stationManager.renderStations();
+            }
+          }
+        }, 100);
+      } else {
+        // Always reuse existing station manager during navigation
+        console.log("🎵 Reusing existing StationManager, rebinding DOM only");
+
+        // Sync station IDs if needed
         if (this.stationManager.currentStationId !== savedStation) {
-          console.log(
-            `🎵 SYNC FIX: Correcting StationManager station ID from ${this.stationManager.currentStationId} to ${savedStation}`,
-          );
+          console.log(`🎵 Syncing station ID from ${this.stationManager.currentStationId} to ${savedStation}`);
           this.stationManager.currentStationId = savedStation;
         }
 
         // Rebind DOM elements without full re-initialization
         this.stationManager.rebindDOM();
+        
+        // CRITICAL: Override server-rendered episode info with current station's data
+        console.log("🎵 Navigation: overriding server-rendered episode info with current station");
+        this.stationManager.updateEpisodeInfoForStation(this.currentStationId);
       }
-
-      // Update episode info for current station (much faster than force update)
-      this.checkForNewEpisode(true);
     } else {
       console.log("🎵 Not on home page, skipping station manager");
     }
@@ -483,6 +517,12 @@ class GlobalRadioPlayer {
 
     // Analytics page functionality
     this.setupAnalyticsFunctionality();
+
+    // About page functionality
+    this.setupAboutPageFunctionality();
+
+    // Full-screen player functionality
+    this.setupFullScreenPlayer();
 
     // NEW: Bind episode play buttons
     if (document.querySelectorAll(".btn-play").length > 0) {
@@ -664,6 +704,41 @@ class GlobalRadioPlayer {
     }, 100);
   }
 
+  setupAboutPageFunctionality() {
+    console.log("📄 Setting up about page functionality...");
+
+    // Check if we're on the about page
+    if (!window.location.pathname.includes("/about")) {
+      console.log("📄 Not on about page, skipping about setup");
+      return;
+    }
+
+    console.log("📄 About page detected, initializing show more functionality...");
+
+    // Reset the about page manager state for fresh initialization
+    if (window.aboutPageManager) {
+      window.aboutPageManager.reset();
+    }
+
+    // Small delay to ensure DOM is ready
+    setTimeout(() => {
+      if (window.aboutPageManager) {
+        console.log("📄 Calling AboutPageManager.init()");
+        window.aboutPageManager.init();
+      }
+    }, 100);
+  }
+
+  setupFullScreenPlayer() {
+    console.log('📱 Setting up full-screen player...');
+    
+    // Initialize full-screen player if not already done
+    if (!window.fullScreenPlayer) {
+      window.fullScreenPlayer = new FullScreenPlayer(this);
+      console.log('📱 Full-screen player created and linked to global player');
+    }
+  }
+
   initBasicAnalytics() {
     console.log("📊 Setting up basic analytics...");
 
@@ -686,8 +761,8 @@ class GlobalRadioPlayer {
           const period = e.target.dataset.period;
           console.log("📊 Time period selected:", period);
 
-          // Update active state
-          timePeriodButtons.forEach((btn) => btn.classList.remove("active"));
+          // Update active state - query fresh buttons
+          document.querySelectorAll("[data-period]").forEach((btn) => btn.classList.remove("active"));
           e.target.classList.add("active");
 
           // Trigger chart update if possible
@@ -1018,34 +1093,30 @@ class GlobalRadioPlayer {
 
     this.updateLoadingStatus(this.LoadingStates.FETCHING_POSITION);
 
-    // FIX 5: Properly construct stream position URL
-    const positionParams = new URLSearchParams();
-    positionParams.append("station", this.currentStationId);
-    positionParams.append("t", Date.now().toString());
-    const positionUrl = `/stream-position?${positionParams.toString()}`;
-
-    // Get server position for current station
-    fetch(positionUrl)
+    // Get stream info (now returns RSS URL and time offset) for the current station
+    const streamParams = new URLSearchParams();
+    streamParams.append("station", this.currentStationId);
+    streamParams.append("t", Date.now().toString());
+    const streamUrl = `/stream?${streamParams.toString()}`;
+    console.log("🎵 Initial stream URL:", streamUrl);
+    
+    fetch(streamUrl)
       .then((response) => response.json())
       .then((data) => {
-        const serverTimePosition = data.time_position || 0;
+        if (!data.audio_url) {
+          throw new Error("No audio URL provided");
+        }
+
+        const audioUrl = data.audio_url;
+        const timeOffset = data.time_offset || 0;
+
         this.updateLoadingStatus(this.LoadingStates.LOADING_STREAM);
 
-        // FIX 6: Ensure audio stream URL includes correct station
-        const streamParams = new URLSearchParams();
-        streamParams.append("station", this.currentStationId);
-        streamParams.append("t", Date.now().toString());
-        const streamUrl = `/stream?${streamParams.toString()}`;
+        console.log("RSS Audio URL:", audioUrl);
+        console.log("Time offset:", timeOffset, "seconds");
 
-        console.log(
-          "Setting audio source for station",
-          this.currentStationId,
-          ":",
-          streamUrl,
-        );
-        console.log("Server position:", serverTimePosition, "seconds");
-
-        this.audioPlayer.src = streamUrl;
+        // Set the RSS audio URL directly
+        this.audioPlayer.src = audioUrl;
 
         const handleLoadedMetadata = () => {
           this.audioPlayer.removeEventListener(
@@ -1053,17 +1124,13 @@ class GlobalRadioPlayer {
             handleLoadedMetadata,
           );
 
-          // CRITICAL: Seek to server position for proper sync
-          if (serverTimePosition > 0 && this.audioPlayer.duration) {
+          // Seek to server time position for radio sync
+          if (timeOffset > 0 && this.audioPlayer.duration) {
             const seekPosition = Math.min(
-              serverTimePosition,
+              timeOffset,
               this.audioPlayer.duration - 1,
             );
-            console.log(
-              "Initial sync - seeking to position:",
-              seekPosition,
-              "seconds",
-            );
+            console.log("Seeking to sync position:", seekPosition, "seconds");
             this.audioPlayer.currentTime = seekPosition;
           }
 
@@ -1072,13 +1139,10 @@ class GlobalRadioPlayer {
           if (playPromise !== undefined) {
             playPromise
               .then(() => {
-                console.log(
-                  "Autoplay started successfully at position:",
-                  this.audioPlayer.currentTime,
-                );
+                console.log("Autoplay started successfully with RSS URL");
                 this.setStreamReady(true);
                 this.showNotification(
-                  "McElroy Radio is now playing!",
+                  "McElroy Radio is now playing from RSS!",
                   "success",
                 );
               })
@@ -1110,7 +1174,7 @@ class GlobalRadioPlayer {
         }
       })
       .catch((error) => {
-        console.error("Failed to get server position:", error);
+        console.error("Failed to get stream info:", error);
         this.updateLoadingStatus(this.LoadingStates.ERROR);
         setTimeout(() => {
           this.hideLoadingOverlay();
@@ -1148,9 +1212,9 @@ class GlobalRadioPlayer {
 
     // Progress bar clicking
 
-    // Progress bar clicking
+    // Progress bar clicking - DISABLED for radio behavior (no scrubbing allowed)
     if (this.progressBar) {
-      this.progressBar.addEventListener("click", (e) => this.seekToPosition(e));
+      // this.progressBar.addEventListener("click", (e) => this.seekToPosition(e));
     } else {
       // Try to find the progress bar as the top-level progress element
       const topProgressBar = document.querySelector(".player-progress");
@@ -1158,9 +1222,9 @@ class GlobalRadioPlayer {
         this.progressBar = topProgressBar;
         this.progress =
           topProgressBar.querySelector(".progress") || this.progress;
-        this.progressBar.addEventListener("click", (e) =>
-          this.seekToPosition(e),
-        );
+        // this.progressBar.addEventListener("click", (e) =>
+        //   this.seekToPosition(e),
+        // );
       }
     }
 
@@ -1312,8 +1376,14 @@ class GlobalRadioPlayer {
     const wasPlaying = !audioPlayer.paused;
     const streamUrl = `/stream?t=${Date.now()}&station=${stationId}`;
 
-    // Immediate switch
-    audioPlayer.src = streamUrl;
+    // Immediate switch - need to get actual RSS URL
+    fetch(streamUrl)
+      .then(response => response.json())
+      .then(data => {
+        audioPlayer.src = data.audio_url;
+        audioPlayer.load();
+      })
+      .catch(err => console.error("🎵 Fast switch failed:", err));
 
     if (wasPlaying) {
       // Try to resume immediately
@@ -1373,8 +1443,14 @@ class GlobalRadioPlayer {
       return;
     }
 
-    // Simple approach: just set source and play if needed
-    audioPlayer.src = streamUrl;
+    // Simple approach: get RSS URL and set source
+    fetch(streamUrl)
+      .then(response => response.json())
+      .then(data => {
+        audioPlayer.src = data.audio_url;
+        audioPlayer.load();
+      })
+      .catch(err => console.error("🎵 Fallback switch failed:", err));
 
     // *** IMMEDIATE episode info update in fallback too ***
     this.forceEpisodeInfoUpdate();
@@ -1511,33 +1587,51 @@ class GlobalRadioPlayer {
           forceUpdate || (data.id && data.id !== this.currentEpisodeId);
 
         if (shouldUpdate) {
-          if (data.id !== this.currentEpisodeId) {
+          const previousEpisodeId = this.currentEpisodeId;
+          const isNewEpisode = data.id !== this.currentEpisodeId;
+          const isFirstFetch = this.currentEpisodeId === null;
+          
+          if (isNewEpisode && !isFirstFetch) {
             console.log("🎵 New episode detected:", data.title);
           } else if (forceUpdate) {
             console.log("🎵 Forced update - refreshing episode display");
+          } else if (isFirstFetch) {
+            console.log("🎵 First episode fetch - updating UI only, keeping audio");
           }
 
           this.currentEpisodeId = data.id;
           this.updateUIWithEpisodeData(data);
           this.updateMediaSessionMetadata(data);
 
-          // Only update audio source if needed and validate station matches
-          if (!forceUpdate) {
-            const expectedStreamUrl = `/stream?station=${this.currentStationId}`;
-            const currentAudioSrc = this.audioPlayer.src;
+          // Check if we need to load a new RSS URL for this episode
+          // Only reload if we have no audio source OR if this is genuinely a new episode (not just first fetch)
+          const hasNoAudioSource = !this.audioPlayer.src || this.audioPlayer.src === "";
+          const shouldReloadAudio = hasNoAudioSource || (isNewEpisode && !isFirstFetch);
+          
+          if (shouldReloadAudio) {
+            console.log("Loading new episode RSS URL");
 
-            if (!currentAudioSrc.includes(expectedStreamUrl)) {
-              const streamUrl = `${expectedStreamUrl}&t=${Date.now()}`;
-              console.log(
-                `🎵 Updating audio source to match station: ${streamUrl}`,
+            // Get the new episode's RSS URL for the current station
+            const streamParams = new URLSearchParams();
+            streamParams.append("station", this.currentStationId);
+            streamParams.append("t", Date.now().toString());
+            const streamUrl = `/stream?${streamParams.toString()}`;
+            
+            fetch(streamUrl)
+              .then((response) => response.json())
+              .then((streamData) => {
+                if (streamData.audio_url) {
+                  this.audioPlayer.src = streamData.audio_url;
+                  this.audioPlayer.currentTime = streamData.time_offset || 0;
+
+                  if (this.isPlaying) {
+                    this.audioPlayer.play().catch(console.error);
+                  }
+                }
+              })
+              .catch((err) =>
+                console.error("Failed to get new episode URL:", err),
               );
-              this.audioPlayer.src = streamUrl;
-              this.audioPlayer.currentTime = 0;
-
-              if (this.isPlaying) {
-                this.audioPlayer.play().catch(console.error);
-              }
-            }
           }
         }
 
@@ -1690,11 +1784,17 @@ class GlobalRadioPlayer {
 
   updateMediaSessionPosition() {
     if ("mediaSession" in navigator && this.audioPlayer) {
-      navigator.mediaSession.setPositionState({
-        duration: this.audioPlayer.duration || 0,
-        playbackRate: this.audioPlayer.playbackRate || 1,
-        position: this.audioPlayer.currentTime || 0,
-      });
+      const duration = this.audioPlayer.duration || 0;
+      const currentTime = this.audioPlayer.currentTime || 0;
+      
+      // Only set position if we have valid duration and current time is not greater than duration
+      if (duration > 0 && currentTime <= duration) {
+        navigator.mediaSession.setPositionState({
+          duration: duration,
+          playbackRate: this.audioPlayer.playbackRate || 1,
+          position: currentTime,
+        });
+      }
     }
   }
 
@@ -2029,8 +2129,29 @@ function updateQuoteBox() {
 let globalRadioPlayer = null;
 
 // FINALLY, update the initGlobalRadioPlayer function to ensure proper instance management:
-function initGlobalRadioPlayer() {
+async function initGlobalRadioPlayer() {
+  // CRITICAL: If player already exists, do nothing - this prevents double initialization
+  if (window.globalRadioPlayer && window.globalRadioPlayer instanceof GlobalRadioPlayer) {
+    console.log("🎵 Global player already exists, skipping initialization");
+    return;
+  }
+
   console.log("🎵 Initializing Global Radio Player");
+  console.log("🎵 Debug - Current window.globalRadioPlayer:", {
+    exists: !!window.globalRadioPlayer,
+    type: window.globalRadioPlayer ? typeof window.globalRadioPlayer : 'undefined',
+    constructor: window.globalRadioPlayer ? window.globalRadioPlayer.constructor.name : 'none',
+    isInstance: window.globalRadioPlayer instanceof GlobalRadioPlayer,
+    hasBackup: !!window.radioPlayerBackup,
+    backupIsValid: window.radioPlayerBackup instanceof GlobalRadioPlayer
+  });
+
+  // Check backup if main reference is lost
+  if (!window.globalRadioPlayer && window.radioPlayerBackup && window.radioPlayerBackup instanceof GlobalRadioPlayer) {
+    console.log("🎵 Restoring from backup reference");
+    window.globalRadioPlayer = window.radioPlayerBackup;
+    return;
+  }
 
   // If we already have a global instance, just rebind UI
   if (
@@ -2043,11 +2164,27 @@ function initGlobalRadioPlayer() {
     // Just rebind UI elements and sync state - don't recreate everything
     globalRadioPlayer.bindElements();
     globalRadioPlayer.setupEventListeners();
+    globalRadioPlayer.setupNavigationHandling(); // Ensure navigation handling is always set up
     globalRadioPlayer.syncUIWithAudioState();
     globalRadioPlayer.setStreamReady(true);
 
     // Rebind page-specific elements - this is where StationManager gets created
-    globalRadioPlayer.bindPageSpecificElements();
+    await globalRadioPlayer.bindPageSpecificElements();
+    return;
+  }
+
+  // Check if we have a global player reference but window reference is lost
+  if (globalRadioPlayer && globalRadioPlayer instanceof GlobalRadioPlayer) {
+    console.log("🎵 Restoring lost window reference to existing global player");
+    window.globalRadioPlayer = globalRadioPlayer;
+    
+    // Just rebind UI elements
+    globalRadioPlayer.bindElements();
+    globalRadioPlayer.setupEventListeners();
+    globalRadioPlayer.setupNavigationHandling();
+    globalRadioPlayer.syncUIWithAudioState();
+    globalRadioPlayer.setStreamReady(true);
+    await globalRadioPlayer.bindPageSpecificElements();
     return;
   }
 
@@ -2055,9 +2192,17 @@ function initGlobalRadioPlayer() {
   console.log("🎵 Creating new global player instance");
   globalRadioPlayer = new GlobalRadioPlayer();
   globalRadioPlayer.init();
+  
+  // CRITICAL: Also bind page-specific elements on initial load
+  await globalRadioPlayer.bindPageSpecificElements();
 
   // CRITICAL: Store the instance globally so it persists across page navigation
   window.globalRadioPlayer = globalRadioPlayer;
+  
+  // Additional protection: store reference in multiple places
+  if (!window.radioPlayerBackup) {
+    window.radioPlayerBackup = globalRadioPlayer;
+  }
 
   console.log("🎵 Global player instance stored:", {
     stored: !!window.globalRadioPlayer,
@@ -2125,6 +2270,11 @@ function updateRadioQuote() {
 
 class StationManager {
   constructor(globalRadioPlayer) {
+    console.log("🎵 StationManager constructor called with:", {
+      hasGlobalPlayer: !!globalRadioPlayer,
+      playerType: globalRadioPlayer ? globalRadioPlayer.constructor.name : 'none',
+      stackTrace: new Error().stack.split('\n').slice(1, 4).join('\n')
+    });
     this.globalRadioPlayer = globalRadioPlayer;
     this.stations = [];
 
@@ -2230,17 +2380,29 @@ class StationManager {
       return;
     }
 
+    if (!this.stations || this.stations.length === 0) {
+      console.log("🎵 No stations data to render");
+      return;
+    }
+
     console.log("🎵 Rendering", this.stations.length, "stations");
+    console.log("🎵 Current station ID:", this.currentStationId);
 
     this.stationsGrid.innerHTML = "";
 
     this.stations.forEach((station) => {
       console.log("🎵 Creating card for station:", station.name);
       const stationCard = this.createStationCard(station);
-      this.stationsGrid.appendChild(stationCard);
+      if (stationCard) {
+        this.stationsGrid.appendChild(stationCard);
+      } else {
+        console.error("🎵 Failed to create station card for:", station.name);
+      }
     });
 
+    // Always update current station display after rendering
     this.updateCurrentStationDisplay();
+    console.log("🎵 Station rendering complete");
   }
 
   createStationCard(station) {
@@ -2352,37 +2514,30 @@ class StationManager {
     const currentMuted = audioPlayer.muted;
 
     try {
-      // FIX 8: Properly construct position URL with station parameter
-      const positionParams = new URLSearchParams();
-      positionParams.append("station", stationId);
-      positionParams.append("t", Date.now().toString());
-      const positionUrl = `/stream-position?${positionParams.toString()}`;
-
-      console.log("🎵 Getting station position from server:", positionUrl);
-      const positionResponse = await fetch(positionUrl);
-      if (!positionResponse.ok) {
-        throw new Error(
-          `Failed to get station position: ${positionResponse.status}`,
-        );
-      }
-
-      const positionData = await positionResponse.json();
-      const serverTimePosition = positionData.time_position || 0;
-      console.log(
-        `🎵 Station ${stationId} server position: ${serverTimePosition}s`,
-      );
-
       // Stop current playback
       if (!audioPlayer.paused) {
         audioPlayer.pause();
       }
 
-      // FIX 9: Create proper stream URL with station parameter
+      // FIX: Get stream URL with station parameter
       const streamParams = new URLSearchParams();
       streamParams.append("station", stationId);
       streamParams.append("t", Date.now().toString());
       const streamUrl = `/stream?${streamParams.toString()}`;
-      console.log("🎵 New station stream URL:", streamUrl);
+      console.log("🎵 Getting station stream info from:", streamUrl);
+
+      // Get the station stream info (JSON response with RSS URL)
+      const streamResponse = await fetch(streamUrl);
+      if (!streamResponse.ok) {
+        throw new Error(`Failed to get stream info: ${streamResponse.status}`);
+      }
+      
+      const streamData = await streamResponse.json();
+      const actualAudioUrl = streamData.audio_url;
+      const serverTimePosition = streamData.time_offset || 0;
+      
+      console.log("🎵 Got station audio URL:", actualAudioUrl);
+      console.log("🎵 Station time position:", serverTimePosition);
 
       // Set up event handlers for the new stream
       const onLoadedMetadata = () => {
@@ -2485,8 +2640,8 @@ class StationManager {
       });
       audioPlayer.addEventListener("error", onError, { once: true });
 
-      // Switch to new stream
-      audioPlayer.src = streamUrl;
+      // Switch to the actual RSS audio URL
+      audioPlayer.src = actualAudioUrl;
       audioPlayer.load();
     } catch (error) {
       console.error("🎵 Exception during station switch:", error);
@@ -2602,30 +2757,41 @@ class StationManager {
     }
   }
 
+  rebindDOM() {
+    console.log("🎵 Rebinding DOM elements for Station Manager");
+    
+    // Re-establish DOM references
+    this.stationsGrid = document.getElementById("stations-grid");
+    this.currentStationName = document.getElementById("current-station-name");
+    
+    if (!this.stationsGrid) {
+      console.log("🎵 Station grid not found, not on home page");
+      return;
+    }
+    
+    // Only re-render if we have stations data, otherwise render will be empty
+    if (this.stations && this.stations.length > 0) {
+      console.log("🎵 Re-rendering existing stations without fetching new data");
+      this.renderStations();
+    } else {
+      console.log("🎵 No existing stations data, skipping render during rebind");
+    }
+    
+    console.log("🎵 DOM rebinding complete");
+  }
+
   startStationSync() {
     // Periodically refresh station list (but don't change current station)
-    setInterval(async () => {
-      await this.loadStations();
-      this.updateCurrentStationDisplay();
-    }, 60000); // Every minute
+    // DISABLED: This was causing episode info conflicts during playback
+    // setInterval(async () => {
+    //   await this.loadStations();
+    //   this.updateCurrentStationDisplay();
+    // }, 60000); // Every minute
+    console.log("🎵 Station sync disabled to prevent episode conflicts");
   }
 }
 
-// Update the bindPageSpecificElements method in GlobalRadioPlayer to include station manager
-// Add this to the bindPageSpecificElements method:
-
-// IN YOUR EXISTING bindPageSpecificElements method, ADD THIS:
-
-// Station Manager initialization for home page
-if (document.getElementById("stations-grid")) {
-  console.log("🎵 Home page detected, initializing station manager");
-  if (!this.stationManager) {
-    this.stationManager = new StationManager(this);
-  }
-  this.stationManager.init();
-} else {
-  console.log("🎵 Not on home page, skipping station manager");
-}
+// Note: Station Manager initialization is now handled in bindPageSpecificElements method above
 
 // Theme Management System
 class ThemeManager {
@@ -4022,8 +4188,8 @@ class AnalyticsManager {
 
         console.log(`📊 Period changed to: ${period}`);
 
-        // Update active state
-        periodButtons.forEach((btn) => btn.classList.remove("active"));
+        // Update active state - query fresh buttons since they were replaced
+        document.querySelectorAll("[data-period]").forEach((btn) => btn.classList.remove("active"));
         newButton.classList.add("active");
 
         // Load new data
@@ -4201,4 +4367,889 @@ window.addEventListener("load", function () {
       window.analyticsManager.init();
     }
   }, 1000);
+});
+
+// About Page Show More Shows Functionality
+class AboutPageManager {
+  constructor() {
+    this.isExpanded = false;
+    this.isInitialized = false;
+  }
+
+  init() {
+    if (this.isInitialized) return;
+    
+    // Only initialize if we're on the about page
+    if (!window.location.pathname.includes('/about')) return;
+    
+    this.randomizeShowCards();
+    this.setupShowMoreButton();
+    this.isInitialized = true;
+    console.log('📄 About page show more functionality initialized');
+  }
+
+  randomizeShowCards() {
+    const showsGrid = document.querySelector(".shows-grid");
+    if (!showsGrid) return;
+
+    const allShowCards = Array.from(showsGrid.children);
+
+    // Shuffle the array using Fisher-Yates algorithm
+    for (let i = allShowCards.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [allShowCards[i], allShowCards[j]] = [allShowCards[j], allShowCards[i]];
+    }
+
+    // Clear the grid and re-append in random order
+    showsGrid.innerHTML = "";
+
+    // Show first 6 cards, hide the rest
+    allShowCards.forEach((card, index) => {
+      if (index < 6) {
+        card.classList.remove("hidden-initially");
+      } else {
+        card.classList.add("hidden-initially");
+      }
+      showsGrid.appendChild(card);
+    });
+
+    // Update the show count
+    this.updateShowCount();
+  }
+
+  setupShowMoreButton() {
+    const showMoreBtn = document.getElementById("show-more-btn");
+    if (!showMoreBtn) return;
+
+    // Remove any existing event listeners
+    const newBtn = showMoreBtn.cloneNode(true);
+    showMoreBtn.parentNode.replaceChild(newBtn, showMoreBtn);
+
+    // Add new event listener
+    newBtn.addEventListener("click", () => {
+      const hiddenCards = document.querySelectorAll(".show-card.hidden-initially");
+
+      if (!this.isExpanded) {
+        // Show all hidden cards with animation
+        hiddenCards.forEach((card, index) => {
+          setTimeout(() => {
+            card.classList.remove("hidden-initially");
+            card.classList.add("revealed");
+          }, index * 100); // Stagger animation
+        });
+
+        // Update button text and icon
+        newBtn.innerHTML = `
+          <i class="fas fa-chevron-up"></i>
+          <span>Show Fewer Shows</span>
+        `;
+        newBtn.classList.add("expanded");
+        this.isExpanded = true;
+      } else {
+        // Hide cards again
+        const revealedCards = document.querySelectorAll(".show-card.revealed");
+        revealedCards.forEach((card) => {
+          card.classList.add("hidden-initially");
+          card.classList.remove("revealed");
+        });
+
+        // Update button text and icon
+        this.updateShowCount();
+        newBtn.classList.remove("expanded");
+        this.isExpanded = false;
+
+        // Scroll back to shows section
+        const showsSection = document.querySelector(".shows-section h2");
+        if (showsSection) {
+          showsSection.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          });
+        }
+      }
+    });
+  }
+
+  updateShowCount() {
+    const showMoreBtn = document.getElementById("show-more-btn");
+    const hiddenCards = document.querySelectorAll(".show-card.hidden-initially");
+
+    if (showMoreBtn && hiddenCards.length > 0) {
+      showMoreBtn.innerHTML = `
+        <i class="fas fa-chevron-down"></i>
+        <span>Show More Shows</span>
+        <span class="show-count">(${hiddenCards.length} more)</span>
+      `;
+    }
+  }
+
+  // Reset state when navigating away
+  reset() {
+    this.isExpanded = false;
+    this.isInitialized = false;
+  }
+}
+
+// Initialize about page manager globally
+window.aboutPageManager = new AboutPageManager();
+
+// Full-Screen Player Manager
+class FullScreenPlayer {
+  constructor(globalRadioPlayer) {
+    this.globalRadioPlayer = globalRadioPlayer;
+    this.isVisible = false;
+    this.isLoading = false;
+    this.currentEpisodeId = null;
+    this.episodeData = null;
+    this.touchStartY = 0;
+    this.touchStartTime = 0;
+    this.swipeThreshold = 50;
+    this.velocityThreshold = 0.5;
+    this.autoShowBlocked = true; // Prevent auto-showing on init
+    
+    this.elements = {};
+    this.init();
+    
+    // Allow manual showing after a delay
+    setTimeout(() => {
+      this.autoShowBlocked = false;
+    }, 2000);
+  }
+
+  init() {
+    this.cacheElements();
+    this.setupEventListeners();
+    this.setupAudioSyncListeners();
+    console.log('📱 Full-screen player initialized');
+  }
+
+  cacheElements() {
+    // Main container and backdrop
+    this.elements.container = document.getElementById('fullscreen-player');
+    this.elements.backdrop = document.getElementById('fullscreen-backdrop');
+    
+    // Ensure player starts hidden with aggressive styling
+    if (this.elements.container) {
+      this.elements.container.style.cssText = `
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 100vh !important;
+        z-index: 9999 !important;
+        transform: translateY(100%) !important;
+        visibility: hidden !important;
+        display: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      `;
+      console.log('📱 Player forcibly hidden with inline styles');
+    }
+    
+    // Header elements
+    this.elements.closeBtn = document.getElementById('fullscreen-close-btn');
+    
+    // Artwork and loading
+    this.elements.episodeCover = document.getElementById('fullscreen-episode-cover');
+    this.elements.loadingSpinner = document.getElementById('fullscreen-loading-spinner');
+    this.elements.artworkOverlay = document.querySelector('.fullscreen-artwork-overlay');
+    
+    // Episode info
+    this.elements.episodeTitle = document.getElementById('fullscreen-episode-title');
+    this.elements.showName = document.getElementById('fullscreen-show-name');
+    this.elements.episodeDate = document.getElementById('fullscreen-episode-date');
+    this.elements.episodeDuration = document.getElementById('fullscreen-episode-duration');
+    this.elements.episodeArtist = document.getElementById('fullscreen-episode-artist');
+    this.elements.episodeDescription = document.getElementById('fullscreen-episode-description');
+    this.elements.randomFact = document.getElementById('fullscreen-random-fact');
+    
+    // Description toggle
+    this.elements.descriptionToggle = document.getElementById('fullscreen-description-toggle');
+    this.elements.description = document.querySelector('.fullscreen-description');
+    
+    // Progress and time
+    this.elements.progressBar = document.getElementById('fullscreen-progress-bar');
+    this.elements.progress = document.getElementById('fullscreen-progress');
+    this.elements.currentTime = document.getElementById('fullscreen-current-time');
+    this.elements.duration = document.getElementById('fullscreen-duration');
+    
+    // Controls
+    this.elements.playBtn = document.getElementById('fullscreen-play-btn');
+    this.elements.rewindBtn = document.getElementById('fullscreen-rewind-btn');
+    this.elements.volumeBtn = document.getElementById('fullscreen-volume-btn');
+    this.elements.volumeSection = document.getElementById('fullscreen-volume-section');
+    this.elements.volumeSlider = document.getElementById('fullscreen-volume-slider');
+  }
+
+  setupEventListeners() {
+    // Close button
+    if (this.elements.closeBtn) {
+      this.elements.closeBtn.addEventListener('click', () => this.hide());
+    }
+
+    // Backdrop click to close
+    if (this.elements.backdrop) {
+      this.elements.backdrop.addEventListener('click', () => this.hide());
+    }
+
+    // Player bar click to open (excluding control buttons)
+    const playerBar = document.getElementById('global-player-bar');
+    if (playerBar) {
+      playerBar.addEventListener('click', (e) => {
+        // Don't open if clicking on control buttons
+        if (e.target.closest('.control-btn, .volume-btn, .volume-slider, .player-controls, .volume-controls')) {
+          return;
+        }
+        this.show();
+      });
+
+      // Add swipe-up gesture to player bar
+      let playerBarTouchStartY = 0;
+      let playerBarTouchStartTime = 0;
+
+      playerBar.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 1) {
+          playerBarTouchStartY = e.touches[0].clientY;
+          playerBarTouchStartTime = Date.now();
+        }
+      });
+
+      playerBar.addEventListener('touchend', (e) => {
+        if (e.changedTouches.length === 1) {
+          const touchEndY = e.changedTouches[0].clientY;
+          const touchEndTime = Date.now();
+          const deltaY = touchEndY - playerBarTouchStartY;
+          const deltaTime = touchEndTime - playerBarTouchStartTime;
+          const velocity = Math.abs(deltaY) / deltaTime;
+
+          // Check for upward swipe (negative deltaY)
+          if (deltaY < -30 && velocity > 0.3) {
+            // Don't open if touching control buttons
+            if (!e.target.closest('.control-btn, .volume-btn, .volume-slider, .player-controls, .volume-controls')) {
+              e.preventDefault();
+              this.show();
+            }
+          }
+        }
+      });
+    }
+
+    // Touch/swipe gestures
+    if (this.elements.container) {
+      this.elements.container.addEventListener('touchstart', (e) => this.handleTouchStart(e));
+      this.elements.container.addEventListener('touchmove', (e) => this.handleTouchMove(e));
+      this.elements.container.addEventListener('touchend', (e) => this.handleTouchEnd(e));
+    }
+
+    // Description toggle
+    if (this.elements.descriptionToggle) {
+      this.elements.descriptionToggle.addEventListener('click', () => this.toggleDescription());
+    }
+
+    // Controls
+    if (this.elements.playBtn) {
+      this.elements.playBtn.addEventListener('click', () => {
+        if (this.globalRadioPlayer) {
+          // Update UI immediately for responsive feedback
+          const icon = this.elements.playBtn.querySelector('i');
+          if (icon) {
+            const willBePlaying = !this.globalRadioPlayer.isPlaying;
+            icon.classList.toggle('fa-play', !willBePlaying);
+            icon.classList.toggle('fa-pause', willBePlaying);
+          }
+          
+          this.globalRadioPlayer.togglePlay();
+        }
+      });
+    }
+
+    if (this.elements.rewindBtn) {
+      this.elements.rewindBtn.addEventListener('click', () => {
+        if (this.globalRadioPlayer) {
+          this.globalRadioPlayer.rewind();
+        }
+      });
+    }
+
+    if (this.elements.volumeBtn) {
+      this.elements.volumeBtn.addEventListener('click', () => this.toggleVolumeSection());
+    }
+
+    if (this.elements.volumeSlider) {
+      this.elements.volumeSlider.addEventListener('input', (e) => {
+        if (this.globalRadioPlayer) {
+          const volume = e.target.value / 100;
+          this.globalRadioPlayer.setVolume(volume);
+        }
+      });
+    }
+
+    // Progress bar seeking - DISABLED for radio behavior (no scrubbing allowed)
+    if (this.elements.progressBar) {
+      // this.elements.progressBar.addEventListener('click', (e) => this.handleProgressClick(e));
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      if (this.isVisible) {
+        switch (e.key) {
+          case 'Escape':
+            this.hide();
+            break;
+          case ' ':
+            e.preventDefault();
+            if (this.globalRadioPlayer) {
+              this.globalRadioPlayer.togglePlay();
+            }
+            break;
+        }
+      }
+    });
+  }
+
+  setupAudioSyncListeners() {
+    // Add real-time sync with the global audio player to prevent lag
+    if (this.globalRadioPlayer && this.globalRadioPlayer.audioPlayer) {
+      const audio = this.globalRadioPlayer.audioPlayer;
+      
+      // Listen for play/pause events to sync immediately
+      audio.addEventListener('play', () => {
+        if (this.elements.playBtn) {
+          const icon = this.elements.playBtn.querySelector('i');
+          if (icon) {
+            icon.classList.remove('fa-play');
+            icon.classList.add('fa-pause');
+          }
+        }
+      });
+      
+      audio.addEventListener('pause', () => {
+        if (this.elements.playBtn) {
+          const icon = this.elements.playBtn.querySelector('i');
+          if (icon) {
+            icon.classList.remove('fa-pause');
+            icon.classList.add('fa-play');
+          }
+        }
+      });
+      
+      // Listen for volume changes
+      audio.addEventListener('volumechange', () => {
+        this.syncWithGlobalPlayer();
+      });
+      
+      // Listen for time updates for progress
+      audio.addEventListener('timeupdate', () => {
+        if (this.isVisible) {
+          this.updateProgress();
+        }
+      });
+    }
+  }
+
+  async show() {
+    if (this.isVisible || this.autoShowBlocked) {
+      if (this.autoShowBlocked) {
+        console.log('📱 Show blocked - auto-show prevention active');
+      }
+      return;
+    }
+    
+    console.log('📱 Opening full-screen player');
+    console.trace('📱 Show called from:'); // Add stack trace to see what's calling this
+    this.isVisible = true;
+    
+    console.log('📱 Container element:', this.elements.container);
+    console.log('📱 Container current styles:', this.elements.container.style.cssText);
+    
+    // Show the backdrop and container
+    if (this.elements.backdrop) {
+      this.elements.backdrop.classList.add('active');
+    }
+    
+    if (this.elements.container) {
+      this.elements.container.classList.add('active');
+      
+      // Get the computed background color
+      const computedStyle = getComputedStyle(document.documentElement);
+      const bgColor = computedStyle.getPropertyValue('--background-color') || '#0f172a';
+      
+      // Clear all existing styles first
+      this.elements.container.style.cssText = '';
+      
+      // Set new styles for showing (only positioning/visibility, let CSS handle layout)
+      this.elements.container.style.cssText = `
+        position: fixed !important;
+        top: 0 !important;
+        left: 0 !important;
+        width: 100% !important;
+        height: 100vh !important;
+        z-index: 9999 !important;
+        visibility: visible !important;
+        display: flex !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: ${bgColor} !important;
+        overflow: hidden !important;
+        transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) !important;
+        transform: translateY(100%) !important;
+      `;
+      
+      console.log('📱 After setting show styles:', this.elements.container.style.cssText);
+      
+      // Small delay to ensure the element is rendered, then animate in
+      setTimeout(() => {
+        console.log('📱 Animating in...');
+        this.elements.container.style.setProperty('transform', 'translateY(0)', 'important');
+        console.log('📱 Transform set to:', this.elements.container.style.transform);
+      }, 50);
+    }
+    
+    // Load current episode data
+    await this.loadCurrentEpisode();
+    
+    // Sync with current playback state
+    this.syncWithGlobalPlayer();
+    
+    // Start progress updates
+    this.startProgressUpdates();
+  }
+
+  hide() {
+    if (!this.isVisible) return;
+    
+    console.log('📱 Closing full-screen player');
+    this.isVisible = false;
+    
+    // Hide the backdrop and container
+    if (this.elements.backdrop) {
+      this.elements.backdrop.classList.remove('active');
+    }
+    if (this.elements.container) {
+      this.elements.container.classList.remove('active');
+      
+      // Animate out
+      this.elements.container.style.setProperty('transform', 'translateY(100%)', 'important');
+      
+      // Hide after animation completes
+      setTimeout(() => {
+        if (!this.isVisible) { // Only hide if we're still supposed to be hidden
+          this.elements.container.style.setProperty('display', 'none', 'important');
+          this.elements.container.style.setProperty('visibility', 'hidden', 'important');
+        }
+      }, 400);
+    }
+    
+    // Stop progress updates
+    this.stopProgressUpdates();
+    
+    // Hide volume section
+    if (this.elements.volumeSection) {
+      this.elements.volumeSection.classList.remove('visible');
+    }
+  }
+
+  async loadCurrentEpisode() {
+    if (!this.globalRadioPlayer) return;
+    
+    this.showLoading(true);
+    
+    try {
+      // Get current episode ID from global player
+      const currentEpisodeId = this.globalRadioPlayer.currentEpisodeId;
+      
+      if (!currentEpisodeId) {
+        console.log('📱 No current episode ID, using basic info');
+        this.loadBasicEpisodeInfo();
+        return;
+      }
+      
+      // Fetch detailed episode data
+      console.log('📱 Fetching episode details for:', currentEpisodeId);
+      const response = await fetch(`/episode-details?id=${encodeURIComponent(currentEpisodeId)}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
+      const episodeData = await response.json();
+      this.episodeData = episodeData;
+      this.currentEpisodeId = currentEpisodeId;
+      
+      console.log('📱 Loaded episode details:', episodeData);
+      this.updateEpisodeDisplay(episodeData);
+      
+    } catch (error) {
+      console.error('📱 Failed to load episode details:', error);
+      this.loadBasicEpisodeInfo();
+    } finally {
+      this.showLoading(false);
+    }
+  }
+
+  loadBasicEpisodeInfo() {
+    // Fallback to basic info from global player
+    const playerTitle = document.getElementById('player-episode-title');
+    const playerShowName = document.getElementById('player-show-name');
+    const playerCover = document.getElementById('player-episode-cover');
+    
+    if (this.elements.episodeTitle && playerTitle) {
+      this.elements.episodeTitle.textContent = playerTitle.textContent || 'McElroy Radio';
+    }
+    
+    if (this.elements.showName && playerShowName) {
+      this.elements.showName.textContent = playerShowName.textContent || 'Where the goofs never end!';
+    }
+    
+    if (this.elements.episodeCover && playerCover) {
+      this.elements.episodeCover.src = playerCover.src || '/static/img/default-cover.png';
+      
+      // Force image dimensions even for fallback
+      this.elements.episodeCover.style.cssText = `
+        width: 300px !important;
+        height: 300px !important;
+        min-width: 300px !important;
+        min-height: 300px !important;
+        max-width: 300px !important;
+        max-height: 300px !important;
+        object-fit: cover !important;
+        display: block !important;
+        position: relative !important;
+      `;
+    }
+    
+    // Set default values for missing data
+    if (this.elements.episodeDate) {
+      this.elements.episodeDate.textContent = 'Date unavailable';
+    }
+    
+    if (this.elements.episodeDuration) {
+      this.elements.episodeDuration.textContent = 'Duration unknown';
+    }
+    
+    if (this.elements.episodeArtist) {
+      this.elements.episodeArtist.textContent = 'The McElroy Brothers';
+    }
+    
+    if (this.elements.episodeDescription) {
+      this.elements.episodeDescription.innerHTML = '<p>Episode details are loading...</p>';
+      // Ensure description starts collapsed
+      this.elements.episodeDescription.classList.remove('expanded');
+      if (this.elements.descriptionToggle) {
+        this.elements.descriptionToggle.classList.remove('expanded');
+        const toggleText = this.elements.descriptionToggle.querySelector('.toggle-text');
+        if (toggleText) {
+          toggleText.textContent = 'Show More';
+        }
+      }
+    }
+    
+    if (this.elements.randomFact) {
+      this.elements.randomFact.textContent = 'The McElroys once solved world peace in a dream but forgot to write it down.';
+    }
+  }
+
+  updateEpisodeDisplay(episodeData) {
+    // Update title and show name
+    if (this.elements.episodeTitle) {
+      this.elements.episodeTitle.textContent = episodeData.title || 'Unknown Episode';
+    }
+    
+    if (this.elements.showName) {
+      this.elements.showName.textContent = episodeData.show_name || 'Unknown Show';
+    }
+    
+    // Update artwork
+    if (this.elements.episodeCover && episodeData.image_path) {
+      this.elements.episodeCover.src = episodeData.image_path;
+      this.elements.episodeCover.alt = `${episodeData.show_name || 'Episode'} Cover Art`;
+      
+      // Force image dimensions
+      this.elements.episodeCover.style.cssText = `
+        width: 300px !important;
+        height: 300px !important;
+        min-width: 300px !important;
+        min-height: 300px !important;
+        max-width: 300px !important;
+        max-height: 300px !important;
+        object-fit: cover !important;
+        display: block !important;
+        position: relative !important;
+      `;
+    }
+    
+    // Update metadata
+    if (this.elements.episodeDate && episodeData.published_at) {
+      const date = new Date(episodeData.published_at);
+      this.elements.episodeDate.textContent = date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+    }
+    
+    if (this.elements.episodeDuration && episodeData.duration) {
+      this.elements.episodeDuration.textContent = this.formatDuration(episodeData.duration);
+    }
+    
+    if (this.elements.episodeArtist) {
+      this.elements.episodeArtist.textContent = episodeData.artist || 'The McElroy Brothers';
+    }
+    
+    // Update description
+    if (this.elements.episodeDescription && episodeData.description) {
+      // Clean up HTML and format nicely
+      const cleanDescription = this.formatDescription(episodeData.description);
+      this.elements.episodeDescription.innerHTML = cleanDescription;
+      
+      // Ensure description starts collapsed
+      this.elements.episodeDescription.classList.remove('expanded');
+      if (this.elements.descriptionToggle) {
+        this.elements.descriptionToggle.classList.remove('expanded');
+        const toggleText = this.elements.descriptionToggle.querySelector('.toggle-text');
+        if (toggleText) {
+          toggleText.textContent = 'Show More';
+        }
+      }
+    }
+    
+    // Update random fact
+    if (this.elements.randomFact && episodeData.random_fact) {
+      this.elements.randomFact.textContent = episodeData.random_fact;
+    }
+  }
+
+  formatDescription(description) {
+    if (!description) return '<p>No description available.</p>';
+    
+    // Remove HTML tags and clean up
+    const cleanText = description
+      .replace(/<[^>]*>/g, '') // Remove HTML tags
+      .replace(/&nbsp;/g, ' ') // Replace &nbsp; with spaces
+      .replace(/&amp;/g, '&') // Replace &amp; with &
+      .replace(/&lt;/g, '<') // Replace &lt; with <
+      .replace(/&gt;/g, '>') // Replace &gt; with >
+      .trim();
+    
+    // Split into paragraphs and wrap in <p> tags
+    const paragraphs = cleanText
+      .split(/\n\s*\n/) // Split on double line breaks
+      .filter(p => p.trim().length > 0) // Remove empty paragraphs
+      .map(p => `<p>${p.trim()}</p>`) // Wrap in <p> tags
+      .join('');
+    
+    return paragraphs || '<p>No description available.</p>';
+  }
+
+  formatDuration(seconds) {
+    if (!seconds) return 'Unknown';
+    
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    } else {
+      return `${minutes}m`;
+    }
+  }
+
+  toggleDescription() {
+    if (!this.elements.description || !this.elements.descriptionToggle) return;
+    
+    const isExpanded = this.elements.description.classList.contains('expanded');
+    
+    if (isExpanded) {
+      this.elements.description.classList.remove('expanded');
+      this.elements.descriptionToggle.classList.remove('expanded');
+      this.elements.descriptionToggle.querySelector('.toggle-text').textContent = 'Show More';
+    } else {
+      this.elements.description.classList.add('expanded');
+      this.elements.descriptionToggle.classList.add('expanded');
+      this.elements.descriptionToggle.querySelector('.toggle-text').textContent = 'Show Less';
+    }
+  }
+
+  toggleVolumeSection() {
+    if (!this.elements.volumeSection) return;
+    
+    this.elements.volumeSection.classList.toggle('visible');
+  }
+
+  syncWithGlobalPlayer() {
+    if (!this.globalRadioPlayer) return;
+    
+    // Sync play/pause state
+    const isPlaying = this.globalRadioPlayer.isPlaying;
+    if (this.elements.playBtn) {
+      const icon = this.elements.playBtn.querySelector('i');
+      if (icon) {
+        icon.classList.toggle('fa-play', !isPlaying);
+        icon.classList.toggle('fa-pause', isPlaying);
+      }
+    }
+    
+    // Sync volume
+    if (this.elements.volumeSlider) {
+      this.elements.volumeSlider.value = this.globalRadioPlayer.volumeLevel * 100;
+    }
+    
+    // Sync volume icon
+    if (this.elements.volumeBtn) {
+      const icon = this.elements.volumeBtn.querySelector('i');
+      if (icon) {
+        const isMuted = this.globalRadioPlayer.isMuted;
+        const volume = this.globalRadioPlayer.volumeLevel;
+        
+        icon.classList.remove('fa-volume-off', 'fa-volume-down', 'fa-volume-up');
+        
+        if (isMuted || volume === 0) {
+          icon.classList.add('fa-volume-off');
+        } else if (volume < 0.5) {
+          icon.classList.add('fa-volume-down');
+        } else {
+          icon.classList.add('fa-volume-up');
+        }
+      }
+    }
+  }
+
+  startProgressUpdates() {
+    this.stopProgressUpdates(); // Clear any existing interval
+    
+    this.progressInterval = setInterval(() => {
+      this.updateProgress();
+    }, 1000);
+  }
+
+  stopProgressUpdates() {
+    if (this.progressInterval) {
+      clearInterval(this.progressInterval);
+      this.progressInterval = null;
+    }
+  }
+
+  updateProgress() {
+    if (!this.globalRadioPlayer || !this.globalRadioPlayer.audioPlayer) return;
+    
+    const audio = this.globalRadioPlayer.audioPlayer;
+    const currentTime = audio.currentTime || 0;
+    const duration = audio.duration || 0;
+    
+    // Update progress bar
+    if (this.elements.progress && duration > 0) {
+      const progressPercent = (currentTime / duration) * 100;
+      this.elements.progress.style.width = `${progressPercent}%`;
+    }
+    
+    // Update time displays
+    if (this.elements.currentTime) {
+      this.elements.currentTime.textContent = this.formatTime(currentTime);
+    }
+    
+    if (this.elements.duration) {
+      this.elements.duration.textContent = this.formatTime(duration);
+    }
+    
+    // Sync play/pause state (in case it changed)
+    this.syncWithGlobalPlayer();
+  }
+
+  formatTime(seconds) {
+    if (!seconds || isNaN(seconds)) return '0:00';
+    
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = Math.floor(seconds % 60);
+    
+    return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+  }
+
+  handleProgressClick(e) {
+    if (!this.globalRadioPlayer || !this.globalRadioPlayer.audioPlayer) return;
+    
+    const progressBar = e.currentTarget;
+    const rect = progressBar.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const progressPercent = clickX / rect.width;
+    
+    const audio = this.globalRadioPlayer.audioPlayer;
+    if (audio.duration) {
+      const newTime = progressPercent * audio.duration;
+      audio.currentTime = newTime;
+    }
+  }
+
+  handleTouchStart(e) {
+    if (e.touches.length !== 1) return;
+    
+    this.touchStartY = e.touches[0].clientY;
+    this.touchStartTime = Date.now();
+    this.touchStartX = e.touches[0].clientX;
+  }
+
+  handleTouchMove(e) {
+    if (e.touches.length !== 1) return;
+    
+    const currentY = e.touches[0].clientY;
+    const deltaY = currentY - this.touchStartY;
+    
+    // Only prevent default scrolling if we're swiping down near the top
+    if (this.touchStartY < 100 && deltaY > 0) {
+      e.preventDefault();
+    }
+  }
+
+  handleTouchEnd(e) {
+    if (e.changedTouches.length !== 1) return;
+    
+    const touchEndY = e.changedTouches[0].clientY;
+    const touchEndX = e.changedTouches[0].clientX;
+    const touchEndTime = Date.now();
+    
+    const deltaY = touchEndY - this.touchStartY;
+    const deltaX = Math.abs(touchEndX - this.touchStartX);
+    const deltaTime = touchEndTime - this.touchStartTime;
+    const velocity = Math.abs(deltaY) / deltaTime;
+    
+    // Check if this is a downward swipe with sufficient distance and velocity
+    // Also ensure it's more vertical than horizontal
+    if (deltaY > 50 && velocity > 0.3 && deltaX < 100 && this.touchStartY < 150) {
+      this.hide();
+    }
+  }
+
+  showLoading(show) {
+    this.isLoading = show;
+    
+    if (this.elements.artworkOverlay) {
+      this.elements.artworkOverlay.classList.toggle('visible', show);
+    }
+  }
+}
+
+// Initialize full-screen player globally
+window.fullScreenPlayer = null;
+
+// Fallback initialization for direct page loads
+document.addEventListener('DOMContentLoaded', function() {
+  // Small delay to ensure everything is loaded
+  setTimeout(() => {
+    // About page fallback
+    if (window.location.pathname.includes('/about') && window.aboutPageManager && !window.aboutPageManager.isInitialized) {
+      console.log('📄 Fallback: Initializing about page on direct load');
+      window.aboutPageManager.init();
+    }
+    
+    // Directory page fallback
+    if (window.location.pathname.includes('/directory') && window.globalRadioPlayer) {
+      console.log('🔍 Fallback: Initializing directory page on direct load');
+      window.globalRadioPlayer.setupDirectoryFunctionality();
+    }
+    
+    // Full-screen player fallback
+    if (window.globalRadioPlayer && !window.fullScreenPlayer) {
+      console.log('📱 Fallback: Initializing full-screen player on direct load');
+      window.globalRadioPlayer.setupFullScreenPlayer();
+    }
+  }, 200);
 });

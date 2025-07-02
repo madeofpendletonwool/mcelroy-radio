@@ -15,8 +15,8 @@ import (
 
 // New creates a new HTTP server with configured routes
 func New(cfg *config.Config) (*http.Server, error) {
-	// Initialize file store
-	fileStore, err := storage.NewFileStore(cfg.ContentDirectories)
+	// Initialize file store with RSS feeds
+	fileStore, err := storage.NewFileStore(cfg.RSSFeeds)
 	if err != nil {
 		return nil, err
 	}
@@ -39,6 +39,7 @@ func New(cfg *config.Config) (*http.Server, error) {
 	r.Get("/", h.HomePage)
 	r.Get("/about", h.AboutPage)
 	r.Get("/directory", h.DirectoryPage)
+	r.Get("/episode", h.EpisodePage)
 
 	// Core streaming route - now supports ?station= parameter
 	r.Get("/stream", h.StreamAudio)
