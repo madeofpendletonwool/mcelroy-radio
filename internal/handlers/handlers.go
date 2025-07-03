@@ -215,13 +215,36 @@ func (h *Handler) HomePage(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) AboutPage(w http.ResponseWriter, r *http.Request) {
 	log.Println("Rendering about page template")
 
+	// Load fund goal data
+	fundGoal, err := config.LoadFundGoal()
+	if err != nil {
+		log.Printf("Error loading fund goal config: %v", err)
+		// Continue with defaults
+		fundGoal = &config.FundGoal{
+			TargetAmount:   60,
+			CurrentAmount:  0,
+			Currency:       "USD",
+			Description:    "At the cheapest level this costs $60 per year.",
+			CampaignActive: true,
+			LastUpdated:    time.Now(),
+		}
+	}
+
+	// Calculate progress percentage
+	progressPercent := 0
+	if fundGoal.TargetAmount > 0 {
+		progressPercent = (fundGoal.CurrentAmount * 100) / fundGoal.TargetAmount
+	}
+
 	data := map[string]interface{}{
-		"Title":       "About McElroy Radio",
-		"CurrentYear": time.Now().Year(),
+		"Title":           "About McElroy Radio",
+		"CurrentYear":     time.Now().Year(),
+		"FundGoal":        fundGoal,
+		"ProgressPercent": progressPercent,
 	}
 
 	var buf bytes.Buffer
-	err := h.templates["about"].ExecuteTemplate(&buf, "layout.html", data)
+	err = h.templates["about"].ExecuteTemplate(&buf, "layout.html", data)
 	if err != nil {
 		log.Printf("Template execution error: %v", err)
 		http.Error(w, "Error rendering page", http.StatusInternalServerError)
