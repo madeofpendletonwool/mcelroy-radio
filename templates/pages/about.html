@@ -113,6 +113,92 @@
         </div>
     </section>
 
+    <section class="wanted-section">
+        <h2><i class="fas fa-search"></i> Wanted Board</h2>
+        <div class="wanted-content">
+            <div class="wanted-info">
+                <h3>Missing Shows I'd Love to Add</h3>
+                <p>
+                    These are shows I know exist but haven't been able to locate
+                    reliable audio or feeds for. If you have information about
+                    any of these shows or know where to find their episodes,
+                    please let me know via the GitHub issue tracker!
+                </p>
+            </div>
+            <div class="wanted-shows">
+                <div class="wanted-show">
+                    <i class="fas fa-question-circle"></i>
+                    <div>
+                        <strong>Bunker Buddies</strong>
+                        <span>A survival preparation podcast</span>
+                    </div>
+                </div>
+                <div class="wanted-show">
+                    <i class="fas fa-question-circle"></i>
+                    <div>
+                        <strong>Satellite Dish With Justin and Sydnee</strong>
+                        <span>Early podcast by Justin and Dr. Sydnee</span>
+                    </div>
+                </div>
+                <div class="wanted-show">
+                    <i class="fas fa-question-circle"></i>
+                    <div>
+                        <strong>Losing The Sheen</strong>
+                        <span>A Charlie Sheen-focused podcast</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="funding-section">
+        <h2><i class="fas fa-dollar-sign"></i> Server Funding Goal</h2>
+        <div class="funding-content">
+            <div class="funding-info">
+                <h3>Help Keep McElroy Radio Running</h3>
+                <p>
+                    McElroy Radio runs cloud server resources.
+                    {{.FundGoal.Description}}. Your contributions help me keep
+                    the good good content flowing 24/7 without interruption.
+                </p>
+            </div>
+            <div class="funding-meter">
+                <div
+                    class="meter-container"
+                    style="--progress: {{.ProgressPercent}}"
+                >
+                    <div
+                        class="meter-progress"
+                        data-progress="{{.ProgressPercent}}"
+                    ></div>
+                    <div class="meter-text">
+                        <span class="current-amount"
+                            >${{.FundGoal.CurrentAmount}}</span
+                        >
+                        <span class="separator">/</span>
+                        <span class="goal-amount"
+                            >${{.FundGoal.TargetAmount}}</span
+                        >
+                    </div>
+                </div>
+                <div class="funding-actions">
+                    <a
+                        href="https://buymeacoffee.com/collinscoffee"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="funding-button"
+                    >
+                        <i class="fas fa-coffee"></i>
+                        <div>
+                            <strong>Support Server Costs</strong>
+                            <span>Every bit helps!</span>
+                        </div>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <section class="shows-section">
         <h2>Shows in Rotation</h2>
 
@@ -363,7 +449,34 @@
                         coffee.
                     </p>
                     <p>
-                        Episodes are automatically sourced and managed through
+                        For shows that no longer have official RSS feeds, I use
+                        <a
+                            href="https://github.com/madeofpendletonwool/chopchoprss"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                        >
+                            ChopChopRSS
+                            <i class="fas fa-external-link-alt"></i> </a
+                        >, a custom-built RSS feed generator that creates
+                        podcast feeds from archived audio files. This allows me
+                        to bring discontinued shows back into rotation, ensuring
+                        that classic McElroy content remains accessible through
+                        modern podcast players and feeds. Want access to a
+                        functional feed for Joystiq or In Case of Emergency?
+                        Head over to
+                        <a
+                            href="https://rss.mecelroyradio.com"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                        >
+                            The official McElroy Radio Feed to grab them.
+                            <i class="fas fa-external-link-alt"></i>
+                        </a>
+                        As other old shows are found they will be added here as
+                        well for perpetual archival.
+                    </p>
+                    <p>
+                        I also develop and maintain
                         <a
                             href="https://github.com/madeofpendletonwool/pinepods"
                             target="_blank"
@@ -371,14 +484,15 @@
                         >
                             Pinepods
                             <i class="fas fa-external-link-alt"></i> </a
-                        >, a self-hosted podcast management platform that
-                        handles episode discovery, metadata extraction, and
-                        content organization.
+                        >, a self-hosted podcast management platform that acts
+                        as a self-hosted Podcast archiver, listener, aggregator,
+                        and ultimate podcast platform.
                     </p>
                     <p>
                         This is a completely free, open-source project created
                         for the love of the McElroy family's content and the
-                        amazing community around it.
+                        amazing community around it. I do this for fun. Can't
+                        you just have fun for awhile?
                     </p>
                 </div>
             </div>
@@ -433,6 +547,19 @@
                     <div>
                         <strong>Pinepods</strong>
                         <span>Episode source & podcast manager</span>
+                    </div>
+                </a>
+
+                <a
+                    href="https://github.com/madeofpendletonwool/chopchoprss"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="support-link chopchoprss"
+                >
+                    <i class="fas fa-rss"></i>
+                    <div>
+                        <strong>ChopChopRSS</strong>
+                        <span>RSS feed generator for archived shows</span>
                     </div>
                 </a>
             </div>
@@ -868,6 +995,19 @@
         color: #8b5cf6;
     }
 
+    .support-link.chopchoprss {
+        border-color: #f97316;
+    }
+
+    .support-link.chopchoprss:hover {
+        border-color: #f97316;
+        background-color: rgba(249, 115, 22, 0.1);
+    }
+
+    .support-link.chopchoprss i {
+        color: #f97316;
+    }
+
     .support-link div {
         flex: 1;
     }
@@ -987,6 +1127,232 @@
         }
     }
 
+    /* Wanted Board Styles */
+    .wanted-section {
+        background-color: var(--surface-color);
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow);
+        padding: 30px;
+        margin-bottom: 30px;
+        border: 1px solid var(--border-color);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .wanted-section::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: linear-gradient(90deg, #ff9500, #ffab00);
+    }
+
+    .wanted-section h2 {
+        color: var(--primary-color);
+        margin-bottom: 25px;
+        text-align: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+    }
+
+    .wanted-content {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 30px;
+        align-items: start;
+    }
+
+    .wanted-info h3 {
+        color: var(--primary-color);
+        margin-bottom: 15px;
+        font-size: 1.2rem;
+    }
+
+    .wanted-info p {
+        color: var(--text-color);
+        line-height: 1.6;
+    }
+
+    .wanted-shows {
+        display: flex;
+        flex-direction: column;
+        gap: 15px;
+    }
+
+    .wanted-show {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        padding: 15px;
+        background-color: var(--background-color);
+        border: 2px solid #ff9500;
+        border-radius: var(--border-radius);
+        transition: all 0.3s ease;
+    }
+
+    .wanted-show:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(255, 149, 0, 0.2);
+    }
+
+    .wanted-show i {
+        color: #ff9500;
+        font-size: 1.2rem;
+        flex-shrink: 0;
+    }
+
+    .wanted-show strong {
+        display: block;
+        color: var(--primary-color);
+        font-weight: 600;
+        margin-bottom: 3px;
+    }
+
+    .wanted-show span {
+        color: var(--text-muted);
+        font-size: 0.9rem;
+    }
+
+    /* Funding Section Styles */
+    .funding-section {
+        background-color: var(--surface-color);
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow);
+        padding: 30px;
+        margin-bottom: 30px;
+        border: 1px solid var(--border-color);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .funding-section::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: linear-gradient(90deg, #22c55e, #16a34a);
+    }
+
+    .funding-section h2 {
+        color: var(--primary-color);
+        margin-bottom: 25px;
+        text-align: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+    }
+
+    .funding-content {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 30px;
+        align-items: center;
+    }
+
+    .funding-info h3 {
+        color: var(--primary-color);
+        margin-bottom: 15px;
+        font-size: 1.2rem;
+    }
+
+    .funding-info p {
+        color: var(--text-color);
+        line-height: 1.6;
+    }
+
+    .funding-meter {
+        text-align: center;
+    }
+
+    .meter-container {
+        position: relative;
+        width: 200px;
+        height: 200px;
+        margin: 0 auto 25px;
+        background: conic-gradient(
+            #22c55e 0deg,
+            #22c55e calc(var(--progress, 75) * 3.6deg),
+            #e5e7eb calc(var(--progress, 75) * 3.6deg),
+            #e5e7eb 360deg
+        );
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+    }
+
+    .meter-container::before {
+        content: "";
+        position: absolute;
+        width: 160px;
+        height: 160px;
+        background-color: var(--surface-color);
+        border-radius: 50%;
+    }
+
+    .meter-text {
+        position: relative;
+        z-index: 1;
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--primary-color);
+    }
+
+    .meter-text .separator {
+        color: var(--text-muted);
+        margin: 0 5px;
+    }
+
+    .current-amount {
+        color: #22c55e;
+    }
+
+    .goal-amount {
+        color: var(--text-muted);
+    }
+
+    .funding-button {
+        display: inline-flex;
+        align-items: center;
+        gap: 15px;
+        padding: 15px 25px;
+        background: linear-gradient(135deg, #ff813f, #ff6b1a);
+        color: white;
+        text-decoration: none;
+        border-radius: var(--border-radius);
+        transition: all 0.3s ease;
+        box-shadow: var(--shadow);
+    }
+
+    .funding-button:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(255, 129, 63, 0.3);
+    }
+
+    .funding-button i {
+        font-size: 1.2rem;
+        flex-shrink: 0;
+    }
+
+    .funding-button strong {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 2px;
+    }
+
+    .funding-button span {
+        font-size: 0.85rem;
+        opacity: 0.9;
+    }
+
     /* External link icon styles */
     .about-text a {
         color: var(--primary-color);
@@ -1003,6 +1369,35 @@
         font-size: 0.8rem;
         margin-left: 3px;
         opacity: 0.7;
+    }
+
+    /* Mobile responsiveness for new sections */
+    @media (max-width: 768px) {
+        .wanted-content,
+        .funding-content {
+            grid-template-columns: 1fr;
+            gap: 20px;
+        }
+
+        .wanted-show {
+            flex-direction: column;
+            text-align: center;
+            gap: 10px;
+        }
+
+        .meter-container {
+            width: 150px;
+            height: 150px;
+        }
+
+        .meter-container::before {
+            width: 120px;
+            height: 120px;
+        }
+
+        .meter-text {
+            font-size: 1.2rem;
+        }
     }
 </style>
 

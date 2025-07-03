@@ -2,11 +2,13 @@ package config
 
 import (
 	"context"
+	"encoding/json"
 	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Config holds the application configuration
@@ -23,6 +25,21 @@ type Config struct {
 type RSSFeed struct {
 	Name string
 	URL  string
+}
+
+// FundGoal represents funding goal configuration
+type FundGoal struct {
+	TargetAmount   int       `json:"target_amount"`
+	CurrentAmount  int       `json:"current_amount"`
+	Currency       string    `json:"currency"`
+	Description    string    `json:"description"`
+	CampaignActive bool      `json:"campaign_active"`
+	LastUpdated    time.Time `json:"last_updated"`
+}
+
+// FundGoalConfig represents the fund goal configuration file structure
+type FundGoalConfig struct {
+	FundGoal FundGoal `json:"fund_goal"`
 }
 
 // Load returns a configuration object populated from environment variables
@@ -177,4 +194,43 @@ func directoryContainsAudioFiles(dir string) (bool, error) {
 	}
 
 	return false, nil
+}
+
+// LoadFundGoal loads the fund goal configuration from JSON file
+func LoadFundGoal() (*FundGoal, error) {
+	configPath := filepath.Join(".", "config", "fund-goal.json")
+
+	// Check if file exists
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		log.Println("Fund goal config file not found, using defaults")
+		return &FundGoal{
+			TargetAmount:   60,
+			CurrentAmount:  0,
+			Currency:       "USD",
+			Description:    "At the cheapest level this costs $60 per year.",
+			CampaignActive: true,
+			LastUpdated:    time.Now(),
+		}, nil
+	}
+
+	// Read the file
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		log.Printf("Error reading fund goal config: %v", err)
+		return nil, err
+	}
+
+	// Parse JSON
+	var config FundGoalConfig
+	if err := json.Unmarshal(data, &config); err != nil {
+		log.Printf("Error parsing fund goal config: %v", err)
+		return nil, err
+	}
+
+	log.Printf("Loaded fund goal config: $%d/$%d (%s)",
+		config.FundGoal.CurrentAmount,
+		config.FundGoal.TargetAmount,
+		config.FundGoal.Currency)
+
+	return &config.FundGoal, nil
 }
